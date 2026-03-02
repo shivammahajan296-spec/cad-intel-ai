@@ -26,30 +26,59 @@ let stepRenderer = null;
 let stepControls = null;
 let stepModel = null;
 
-function renderStructuredSummary(structured, source = "", reason = "", screenshots = 0) {
-  if (!structured || !structured.sections) {
-    summaryBox.textContent = "Summary format unavailable.";
+function renderDynamicSummary(summaryText) {
+  if (!summaryText || !summaryText.trim()) {
+    summaryBox.textContent = "No summary generated.";
     return;
   }
 
-  const sections = [
-    { key: "part_identification", title: "Part Identification" },
-    { key: "materials", title: "Materials" },
-    { key: "manufacturing", title: "Manufacturing" },
-    { key: "complexity", title: "Complexity" },
-    { key: "recommendation", title: "Recommendation" },
-  ];
+  const lines = summaryText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length);
+
+  const isDivider = (line) => /^[-_]{4,}$/.test(line);
+  const isHeading = (line) =>
+    /^\s*(\d+[\)\.\-]?\s*)?[A-Za-z][A-Za-z0-9/&(),\-\s]{2,}:?\s*$/.test(line) &&
+    !/^[\-\*\u2022]/.test(line);
+
+  const cleanHeading = (line) =>
+    line
+      .replace(/^\s*\d+[\)\.\-]?\s*/, "")
+      .replace(/:$/, "")
+      .trim();
+
+  const toBullets = (line) => {
+    const cleaned = line.replace(/^[\-\*\u2022]\s*/, "").trim();
+    if (!cleaned) return [];
+    if (cleaned.includes(" - ")) {
+      return cleaned.split(" - ").map((item) => item.trim()).filter(Boolean);
+    }
+    return [cleaned];
+  };
+
+  const sections = [];
+  let current = { title: "Analysis", items: [] };
+  sections.push(current);
+
+  for (const line of lines) {
+    if (isDivider(line)) continue;
+    if (isHeading(line)) {
+      current = { title: cleanHeading(line), items: [] };
+      sections.push(current);
+      continue;
+    }
+    const bullets = toBullets(line);
+    if (bullets.length) {
+      current.items.push(...bullets);
+    }
+  }
 
   const cards = sections
+    .filter((section) => section.items.length)
     .map((section) => {
-      const items = structured.sections?.[section.key] || [];
-      const list = items.map((item) => `<li>${item}</li>`).join("");
-      return `
-        <article class="summary-card">
-          <h4>${section.title}</h4>
-          <ul>${list}</ul>
-        </article>
-      `;
+      const itemsHtml = section.items.map((item) => `<li>${item}</li>`).join("");
+      return `<article class="summary-card"><h4>${section.title}</h4><ul>${itemsHtml}</ul></article>`;
     })
     .join("");
 
@@ -429,12 +458,7 @@ async function runSummaryPipeline({ captureFirst = true } = {}) {
 
     const data = await res.json();
     console.log("[analysis] summarize.done", data);
-    renderStructuredSummary(
-      data.summary_structured,
-      data.summary_source || "unknown",
-      data.summary_reason || "",
-      Number(data.screenshots_count || 0),
-    );
+    renderDynamicSummary(data.summary || "");
   } catch (err) {
     console.error("[analysis] summaryPipeline.error", err);
     summaryBox.textContent = `Analysis failed: ${err.message}`;
@@ -479,12 +503,7 @@ async function boot() {
   }
 
   if (asset.summary) {
-    renderStructuredSummary(
-      asset.summary_structured,
-      asset.summary_source || "stored",
-      asset.summary_reason || "",
-      (asset.screenshots || []).length,
-    );
+    renderDynamicSummary(asset.summary);
   } else if (asset.source_type === "step" && previewReady) {
     await runSummaryPipeline({ captureFirst: true });
   }
