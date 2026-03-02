@@ -317,6 +317,7 @@ function animate() {
 async function captureViews() {
   const cameraPositions = [[0, 10, 0], [10, 0, 0], [0, 0, 10], [7, 7, 7]];
   const captures = [];
+  console.log("[analysis] captureViews.start", { viewerMode, cameraPositions });
 
   if (viewerMode === "step") {
     if (!stepRenderer || !stepCamera || !stepControls) {
@@ -345,11 +346,13 @@ async function captureViews() {
     body: JSON.stringify({ asset_id: assetId, screenshots: captures }),
   });
   if (!res.ok) {
+    console.error("[analysis] captureViews.failed", { status: res.status });
     throw new Error("Failed to save captured views.");
   }
 
   const data = await res.json();
   savedScreenshots = captures;
+  console.log("[analysis] captureViews.done", { saved: data.saved, captured: captures.length });
   return data;
 }
 
@@ -363,6 +366,12 @@ async function runSummaryPipeline({ captureFirst = true } = {}) {
   }
   analysisRunning = true;
   try {
+    console.log("[analysis] summaryPipeline.start", {
+      assetId,
+      sourceType: asset?.source_type,
+      captureFirst,
+      previewReady,
+    });
     if (captureFirst || !savedScreenshots.length) {
       summaryBox.textContent = "Capturing technical views...";
       await captureViews();
@@ -382,15 +391,18 @@ async function runSummaryPipeline({ captureFirst = true } = {}) {
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
+      console.error("[analysis] summarize.failed", { status: res.status });
       throw new Error("Summary API failed.");
     }
 
     const data = await res.json();
+    console.log("[analysis] summarize.done", data);
     const source = data.summary_source || "unknown";
     const reason = data.summary_reason ? ` (${data.summary_reason})` : "";
     const shots = Number(data.screenshots_count || 0);
     summaryBox.textContent = `${data.summary || "No summary generated."}\n\nSource: ${source}${reason}. Screenshots sent: ${shots}.`;
   } catch (err) {
+    console.error("[analysis] summaryPipeline.error", err);
     summaryBox.textContent = `Analysis failed: ${err.message}`;
   } finally {
     analysisRunning = false;

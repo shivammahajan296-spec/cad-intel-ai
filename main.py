@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 import math
 import mimetypes
 import os
@@ -38,6 +39,7 @@ ASSET_DB = GENERATED_DIR / "assets.json"
 CONFIG_DB = GENERATED_DIR / "config.json"
 DEFAULT_STRAIVE_SUMMARY_URL = "https://llmfoundry.straive.com/gemini/v1beta/openai/chat/completions"
 DEFAULT_STRAIVE_MODEL = "gemini-3-pro-preview"
+LOG_LEVEL = os.getenv("APP_LOG_LEVEL", "INFO").upper()
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 GENERATED_DIR.mkdir(parents=True, exist_ok=True)
@@ -47,6 +49,12 @@ if not ASSET_DB.exists():
     ASSET_DB.write_text("{}", encoding="utf-8")
 if not CONFIG_DB.exists():
     CONFIG_DB.write_text("{}", encoding="utf-8")
+
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("cad-intel-ai")
 
 app = FastAPI(title="CAD-Intel AI")
 app.add_middleware(
@@ -243,6 +251,14 @@ def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
     api_key = os.getenv("STRAIVE_API_KEY", "").strip() or str(
         config.get("straive_api_key", "")
     ).strip()
+    logger.info(
+        "summary.start source_type=%s screenshots=%s text_len=%s straive_url=%s key_set=%s",
+        payload.get("source_type", "unknown"),
+        len(payload.get("screenshots", []) or []),
+        len(payload.get("text", "") or ""),
+        straive_url,
+        "yes" if bool(api_key) else "no",
+    )
     if straive_url and api_key:
         try:
             source_type = payload.get("source_type", "unknown")
@@ -276,6 +292,12 @@ def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
                                 "image_url": {"url": f"data:{mime};base64,{img_b64}"},
                             }
                         )
+            logger.info(
+                "summary.straive.request model=%s content_parts=%s image_parts=%s",
+                straive_model,
+                len(content_parts),
+                max(len(content_parts) - 1, 0),
+            )
 
             req_payload = {
                 "model": straive_model,
@@ -294,6 +316,7 @@ def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
                 data=json.dumps(req_payload).encode("utf-8"),
             )
             with request.urlopen(req, timeout=18) as resp:
+                logger.info("summary.straive.http_status=%s", getattr(resp, "status", "unknown"))
                 body = resp.read().decode("utf-8", errors="ignore")
             parsed = json.loads(body) if body else {}
 
@@ -304,6 +327,7 @@ def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
                 if isinstance(msg, dict):
                     content = msg.get("content")
                     if isinstance(content, str) and content.strip():
+                        logger.info("summary.straive.success mode=string")
                         return content.strip(), "straive", ""
                     if isinstance(content, list):
                         text_parts: list[str] = []
@@ -313,7 +337,9 @@ def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
                                 if isinstance(txt, str) and txt.strip():
                                     text_parts.append(txt.strip())
                         if text_parts:
+                            logger.info("summary.straive.success mode=content_list")
                             return "\n".join(text_parts).strip(), "straive", ""
+            logger.warning("summary.straive.invalid_response keys=%s", list(parsed.keys())[:12])
             return (
                 "Project Manager Summary: Straive response did not contain summary text. "
                 "Check model permissions or endpoint response format.",
@@ -321,6 +347,17 @@ def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
                 "invalid_straive_response",
             )
         except error.HTTPError as exc:
+            err_body = ""
+            try:
+                err_body = exc.read().decode("utf-8", errors="ignore")[:400]
+            except Exception:
+                err_body = ""
+            logger.error(
+                "summary.straive.http_error code=%s reason=%s body=%s",
+                exc.code,
+                getattr(exc, "reason", ""),
+                err_body,
+            )
             return (
                 "Project Manager Summary: Straive API request failed. "
                 "Check API key, endpoint access, and model permissions.",
@@ -328,12 +365,14 @@ def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
                 f"straive_http_error_{exc.code}",
             )
         except (error.URLError, TimeoutError, ValueError, json.JSONDecodeError):
+            logger.exception("summary.straive.request_failed")
             return (
                 "Project Manager Summary: Straive API request failed due to connectivity or payload parse issue.",
                 "fallback",
                 "straive_request_failed",
             )
     elif not api_key:
+        logger.warning("summary.fallback missing_straive_api_key")
         return (
             "Project Manager Summary: Straive API key is not configured. "
             "Use 'Set Key' on dashboard to enable LLM summaries.",
@@ -557,6 +596,7 @@ def save_capture(payload: CaptureRequest) -> dict[str, Any]:
     asset["screenshots"] = cleaned
     assets[payload.asset_id] = asset
     _save_assets(assets)
+    logger.info("capture.saved asset_id=%s count=%s", payload.asset_id, len(cleaned))
     return {"saved": len(cleaned), "screenshots": cleaned}
 
 
@@ -590,6 +630,13 @@ def summarize(payload: SummarizeRequest) -> dict[str, Any]:
 
     search_text = "\n".join(asset.get("texts", []) + asset.get("hierarchy", []))
     _index_asset(asset["asset_id"], asset["filename"], search_text, summary)
+    logger.info(
+        "summary.done asset_id=%s source=%s reason=%s screenshots=%s",
+        payload.asset_id,
+        summary_source,
+        summary_reason,
+        len(payload.screenshots or []),
+    )
 
     return {
         "summary": summary,
