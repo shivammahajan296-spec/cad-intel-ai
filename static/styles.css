@@ -24,9 +24,10 @@ body {
 }
 
 .container {
-  max-width: 1220px;
+  max-width: 1720px;
+  width: 100%;
   margin: 0 auto;
-  padding: 26px;
+  padding: 18px 16px;
 }
 
 .topbar {

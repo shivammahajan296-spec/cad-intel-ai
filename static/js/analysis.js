@@ -11,6 +11,7 @@ const metaRows = document.getElementById("metaRows");
 const summaryBox = document.getElementById("summaryBox");
 const captureBtn = document.getElementById("captureBtn");
 const summarizeBtn = document.getElementById("summarizeBtn");
+const downloadAnalysisBtn = document.getElementById("downloadAnalysisBtn");
 const container = document.getElementById("viewerCanvas");
 
 let asset = null;
@@ -37,6 +38,30 @@ let dxfOffsetY = 0;
 let dxfDragging = false;
 let dxfLastX = 0;
 let dxfLastY = 0;
+
+function downloadAnalysis() {
+  const analysisText = (asset?.summary || "").trim() || summaryBox.innerText.trim();
+  if (!analysisText || analysisText === "Summary will appear here.") {
+    summaryBox.textContent = "No analysis available to download.";
+    return;
+  }
+
+  const safeBase = (asset?.filename || "analysis")
+    .replace(/\.[^/.]+$/, "")
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "analysis";
+  const fileName = `${safeBase}_analysis.md`;
+  const header = `# CAD Intelligence Analysis\n\n- File: ${asset?.filename || "Unknown"}\n- Type: ${asset?.source_type || "Unknown"}\n\n`;
+  const blob = new Blob([header, analysisText, "\n"], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 function renderDynamicSummary(summaryText) {
   if (!summaryText || !summaryText.trim()) {
@@ -769,6 +794,7 @@ async function runSummaryPipeline({ captureFirst = true } = {}) {
 
     const data = await res.json();
     console.log("[analysis] summarize.done", data);
+    asset.summary = data.summary || "";
     renderDynamicSummary(data.summary || "");
   } catch (err) {
     console.error("[analysis] summaryPipeline.error", err);
@@ -843,5 +869,6 @@ captureBtn.addEventListener("click", async () => {
 });
 
 summarizeBtn.addEventListener("click", () => runSummaryPipeline({ captureFirst: true }));
+downloadAnalysisBtn.addEventListener("click", downloadAnalysis);
 
 boot();
