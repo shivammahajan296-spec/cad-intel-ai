@@ -148,6 +148,162 @@ def _clear_dir_contents(path: Path, keep_names: set[str] | None = None) -> int:
     return removed
 
 
+def _default_extraction_engine() -> dict[str, Any]:
+    return {
+        "role": "You are a senior mechanical design engineer, CAD expert, and manufacturing specialist.",
+        "objective": [
+            "Analyze the provided CAD image and extract complete engineering intelligence from it.",
+            "Your task is NOT to recreate the image, but to deeply understand and describe it from a professional product engineering perspective.",
+        ],
+        "sections": [
+            {
+                "title": "Object Identification",
+                "items": [
+                    "What is the likely object type?",
+                    "What industry could it belong to?",
+                    "Is it consumer, industrial, automotive, packaging, medical, etc.?",
+                ],
+            },
+            {
+                "title": "Geometric Analysis",
+                "items": [
+                    "Identify symmetry (axial / planar / none).",
+                    "Identify primary geometric primitives (cylinders, cones, extrudes, revolves, lofts, sweeps).",
+                    "Identify secondary features (ribs, grooves, knurls, fillets, chamfers, threads, draft angles).",
+                    "Detect hollow regions.",
+                    "Detect wall thickness logic.",
+                    "Detect undercuts.",
+                    "Detect assembly parts or multi-body structure.",
+                ],
+            },
+            {
+                "title": "Dimension Inference",
+                "items": [
+                    "If scale is not provided, infer realistic industrial dimensions in millimeters.",
+                    "Estimate overall height, width / diameter, wall thickness, feature depth, fillet radius, chamfer size, and thread pitch (if visible).",
+                    "Explain reasoning behind each estimate.",
+                ],
+            },
+            {
+                "title": "Manufacturing Analysis",
+                "items": [
+                    "Likely manufacturing method (Injection molding / CNC machining / die casting / extrusion / 3D print / etc.).",
+                    "Required tolerances.",
+                    "Surface finish requirements.",
+                    "Draft angle presence.",
+                    "Tooling complexity level (Low / Medium / High).",
+                    "Cost category (Low / Medium / High).",
+                ],
+            },
+            {
+                "title": "Design For Manufacturing (DFM) Review",
+                "items": [
+                    "Strength weaknesses.",
+                    "Stress concentration areas.",
+                    "Thin wall risks.",
+                    "Warpage risks (if molded).",
+                    "Over-engineering detection.",
+                    "Undercut or tooling problems.",
+                ],
+            },
+            {
+                "title": "Material Recommendation",
+                "items": [
+                    "Suggest 2-3 suitable materials.",
+                    "Why each would be used.",
+                    "Alternative cost-effective material.",
+                ],
+            },
+            {
+                "title": "Improvement Suggestions",
+                "items": [
+                    "Weight reduction opportunities.",
+                    "Structural reinforcement suggestions.",
+                    "Manufacturing simplification ideas.",
+                    "Assembly improvement ideas.",
+                ],
+            },
+        ],
+        "closing": [
+            "Be precise.",
+            "Think like a manufacturing engineer.",
+            "Use millimeters.",
+            "Do not hallucinate decorative assumptions.",
+            "Explain logic clearly.",
+        ],
+    }
+
+
+def _normalize_extraction_engine(engine_cfg: Any) -> dict[str, Any]:
+    default_engine = _default_extraction_engine()
+    if not isinstance(engine_cfg, dict):
+        return default_engine
+
+    role = str(engine_cfg.get("role", "")).strip() or default_engine["role"]
+
+    raw_objective = engine_cfg.get("objective")
+    objective = []
+    if isinstance(raw_objective, list):
+        objective = [str(item).strip() for item in raw_objective if str(item).strip()]
+    if not objective:
+        objective = default_engine["objective"]
+
+    raw_sections = engine_cfg.get("sections")
+    sections: list[dict[str, Any]] = []
+    if isinstance(raw_sections, list):
+        for section in raw_sections:
+            if not isinstance(section, dict):
+                continue
+            title = str(section.get("title", "")).strip()
+            raw_items = section.get("items")
+            items: list[str] = []
+            if isinstance(raw_items, list):
+                items = [str(item).strip() for item in raw_items if str(item).strip()]
+            if title and items:
+                sections.append({"title": title, "items": items})
+    if not sections:
+        sections = default_engine["sections"]
+
+    raw_closing = engine_cfg.get("closing")
+    closing = []
+    if isinstance(raw_closing, list):
+        closing = [str(item).strip() for item in raw_closing if str(item).strip()]
+    if not closing:
+        closing = default_engine["closing"]
+
+    return {
+        "role": role,
+        "objective": objective,
+        "sections": sections,
+        "closing": closing,
+    }
+
+
+def _build_extraction_prompt(engine_cfg: Any) -> str:
+    engine = _normalize_extraction_engine(engine_cfg)
+    lines: list[str] = [engine["role"], ""]
+    lines.extend(engine["objective"])
+    lines.append("")
+
+    for idx, section in enumerate(engine["sections"], start=1):
+        title = str(section.get("title", "")).strip().upper()
+        items = section.get("items", [])
+        lines.extend(
+            [
+                "--------------------------------------------",
+                f"{idx}) {title}",
+                "--------------------------------------------",
+            ]
+        )
+        for item in items:
+            lines.append(f"- {item}")
+        lines.append("")
+
+    lines.extend(["--------------------------------------------", ""])
+    lines.extend(engine["closing"])
+    return "\n".join(lines).strip()
+
+
 def _extract_dxf(path: Path) -> dict[str, Any]:
     doc = ezdxf.readfile(path)
     header = doc.header
@@ -587,6 +743,10 @@ class StraiveConfigRequest(BaseModel):
     api_key: str | None = ""
 
 
+class ExtractionEngineConfigRequest(BaseModel):
+    engine: dict[str, Any] | None = None
+
+
 @app.get("/")
 def home() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
@@ -782,6 +942,22 @@ def set_straive_config(payload: StraiveConfigRequest) -> dict[str, str]:
     return {"status": "saved"}
 
 
+@app.get("/api/config/extraction-engine")
+def get_extraction_engine_config() -> dict[str, Any]:
+    config = _load_config()
+    engine = _normalize_extraction_engine(config.get("extraction_engine"))
+    return {"engine": engine, "prompt": _build_extraction_prompt(engine)}
+
+
+@app.post("/api/config/extraction-engine")
+def set_extraction_engine_config(payload: ExtractionEngineConfigRequest) -> dict[str, Any]:
+    engine = _normalize_extraction_engine(payload.engine or {})
+    config = _load_config()
+    config["extraction_engine"] = engine
+    _save_config(config)
+    return {"status": "saved", "engine": engine, "prompt": _build_extraction_prompt(engine)}
+
+
 @app.post("/api/capture")
 def save_capture(payload: CaptureRequest) -> dict[str, Any]:
     assets = _load_assets()
@@ -814,92 +990,8 @@ def summarize(payload: SummarizeRequest) -> dict[str, Any]:
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
 
-    prompt = """
-You are a senior mechanical design engineer, CAD expert, and manufacturing specialist.
-
-Analyze the provided CAD image and extract complete engineering intelligence from it.
-
-Your task is NOT to recreate the image, but to deeply understand and describe it from a professional product engineering perspective.
-
---------------------------------------------
-1) OBJECT IDENTIFICATION
---------------------------------------------
-- What is the likely object type?
-- What industry could it belong to?
-- Is it consumer, industrial, automotive, packaging, medical, etc.?
-
---------------------------------------------
-2) GEOMETRIC ANALYSIS
---------------------------------------------
-- Identify symmetry (axial / planar / none)
-- Identify primary geometric primitives (cylinders, cones, extrudes, revolves, lofts, sweeps)
-- Identify secondary features (ribs, grooves, knurls, fillets, chamfers, threads, draft angles)
-- Detect hollow regions
-- Detect wall thickness logic
-- Detect undercuts
-- Detect assembly parts or multi-body structure
-
---------------------------------------------
-3) DIMENSION INFERENCE
---------------------------------------------
-If scale is not provided:
-- Infer realistic industrial dimensions in millimeters
-- Estimate:
-  - Overall height
-  - Width / diameter
-  - Wall thickness
-  - Feature depth
-  - Fillet radius
-  - Chamfer size
-  - Thread pitch (if visible)
-
-Explain reasoning behind each estimate.
-
---------------------------------------------
-4) MANUFACTURING ANALYSIS
---------------------------------------------
-- Likely manufacturing method (Injection molding / CNC machining / die casting / extrusion / 3D print / etc.)
-- Required tolerances
-- Surface finish requirements
-- Draft angle presence
-- Tooling complexity level (Low / Medium / High)
-- Cost category (Low / Medium / High)
-
---------------------------------------------
-5) DESIGN FOR MANUFACTURING (DFM) REVIEW
---------------------------------------------
-- Strength weaknesses
-- Stress concentration areas
-- Thin wall risks
-- Warpage risks (if molded)
-- Over-engineering detection
-- Undercut or tooling problems
-
---------------------------------------------
-6) MATERIAL RECOMMENDATION
---------------------------------------------
-Suggest:
-- 2-3 suitable materials
-- Why each would be used
-- Alternative cost-effective material
-
---------------------------------------------
-7) IMPROVEMENT SUGGESTIONS
---------------------------------------------
-- Weight reduction opportunities
-- Structural reinforcement suggestions
-- Manufacturing simplification ideas
-- Assembly improvement ideas
-
-
---------------------------------------------
-
-Be precise.
-Think like a manufacturing engineer.
-Use millimeters.
-Do not hallucinate decorative assumptions.
-Explain logic clearly.
-""".strip()
+    config = _load_config()
+    prompt = _build_extraction_prompt(config.get("extraction_engine"))
     summary, summary_source, summary_reason = _generate_summary(
         {
             "source_type": payload.source_type,

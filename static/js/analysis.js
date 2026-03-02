@@ -12,7 +12,17 @@ const summaryBox = document.getElementById("summaryBox");
 const captureBtn = document.getElementById("captureBtn");
 const summarizeBtn = document.getElementById("summarizeBtn");
 const downloadAnalysisBtn = document.getElementById("downloadAnalysisBtn");
+const openExtractionEngineBtn = document.getElementById("openExtractionEngineBtn");
 const container = document.getElementById("viewerCanvas");
+const extractionEngineModal = document.getElementById("extractionEngineModal");
+const engineRoleInput = document.getElementById("engineRoleInput");
+const engineObjectiveInput = document.getElementById("engineObjectiveInput");
+const engineSections = document.getElementById("engineSections");
+const addEngineSectionBtn = document.getElementById("addEngineSectionBtn");
+const engineClosingInput = document.getElementById("engineClosingInput");
+const saveEngineConfigBtn = document.getElementById("saveEngineConfigBtn");
+const closeEngineConfigBtn = document.getElementById("closeEngineConfigBtn");
+const engineConfigStatus = document.getElementById("engineConfigStatus");
 
 let asset = null;
 let scene, camera, renderer, controls, modelRoot;
@@ -20,6 +30,7 @@ let savedScreenshots = [];
 let previewReady = false;
 let analysisRunning = false;
 let viewerMode = "module";
+let extractionEngineConfig = null;
 
 let stepOcct = null;
 let stepScene = null;
@@ -38,6 +49,187 @@ let dxfOffsetY = 0;
 let dxfDragging = false;
 let dxfLastX = 0;
 let dxfLastY = 0;
+
+function normalizeEngineConfigClient(engine) {
+  const fallback = {
+    role: "You are a senior mechanical design engineer, CAD expert, and manufacturing specialist.",
+    objective: [
+      "Analyze the provided CAD image and extract complete engineering intelligence from it.",
+      "Your task is NOT to recreate the image, but to deeply understand and describe it from a professional product engineering perspective.",
+    ],
+    sections: [
+      { title: "Object Identification", items: ["What is the likely object type?"] },
+    ],
+    closing: ["Be precise.", "Use millimeters."],
+  };
+  if (!engine || typeof engine !== "object") return fallback;
+
+  const role = String(engine.role || "").trim() || fallback.role;
+  const objective = Array.isArray(engine.objective)
+    ? engine.objective.map((v) => String(v || "").trim()).filter(Boolean)
+    : [];
+  const sections = Array.isArray(engine.sections)
+    ? engine.sections
+        .map((section) => ({
+          title: String(section?.title || "").trim(),
+          items: Array.isArray(section?.items)
+            ? section.items.map((v) => String(v || "").trim()).filter(Boolean)
+            : [],
+        }))
+        .filter((section) => section.title && section.items.length)
+    : [];
+  const closing = Array.isArray(engine.closing)
+    ? engine.closing.map((v) => String(v || "").trim()).filter(Boolean)
+    : [];
+
+  return {
+    role,
+    objective: objective.length ? objective : fallback.objective,
+    sections: sections.length ? sections : fallback.sections,
+    closing: closing.length ? closing : fallback.closing,
+  };
+}
+
+function escapeAttr(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function splitNonEmptyLines(value) {
+  return String(value || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function renderEngineSections() {
+  if (!engineSections || !extractionEngineConfig) return;
+  engineSections.innerHTML = extractionEngineConfig.sections
+    .map((section, sectionIndex) => {
+      const points = section.items
+        .map(
+          (point, pointIndex) => `
+            <div class="engine-point-row">
+              <input
+                class="text-input engine-point-input"
+                data-engine-field="item"
+                data-section-index="${sectionIndex}"
+                data-point-index="${pointIndex}"
+                value="${escapeAttr(point)}"
+                type="text"
+              />
+              <button
+                class="mini-btn danger-btn"
+                type="button"
+                data-engine-action="remove-point"
+                data-section-index="${sectionIndex}"
+                data-point-index="${pointIndex}"
+              >Delete</button>
+            </div>
+          `
+        )
+        .join("");
+      return `
+        <article class="engine-section-card">
+          <div class="engine-section-head">
+            <span class="engine-section-index">${sectionIndex + 1}</span>
+            <input
+              class="text-input engine-section-title"
+              data-engine-field="title"
+              data-section-index="${sectionIndex}"
+              value="${escapeAttr(section.title)}"
+              type="text"
+            />
+            <button
+              class="mini-btn danger-btn"
+              type="button"
+              data-engine-action="remove-section"
+              data-section-index="${sectionIndex}"
+            >Delete Section</button>
+          </div>
+          <div class="engine-points">${points}</div>
+          <div class="actions-row engine-section-actions">
+            <button
+              class="mini-btn"
+              type="button"
+              data-engine-action="add-point"
+              data-section-index="${sectionIndex}"
+            >Add Point</button>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+function syncEngineTopFields() {
+  if (!extractionEngineConfig) return;
+  extractionEngineConfig.role = String(engineRoleInput?.value || "").trim();
+  extractionEngineConfig.objective = splitNonEmptyLines(engineObjectiveInput?.value || "");
+  extractionEngineConfig.closing = splitNonEmptyLines(engineClosingInput?.value || "");
+}
+
+function openExtractionEngineModal() {
+  extractionEngineModal?.classList.remove("hidden");
+}
+
+function closeExtractionEngineModal() {
+  extractionEngineModal?.classList.add("hidden");
+}
+
+async function loadExtractionEngineConfig() {
+  if (!engineConfigStatus) return;
+  engineConfigStatus.textContent = "Loading extraction engine...";
+  const res = await fetch("/api/config/extraction-engine");
+  if (!res.ok) {
+    engineConfigStatus.textContent = "Failed to load extraction engine config.";
+    return;
+  }
+  const data = await res.json();
+  extractionEngineConfig = normalizeEngineConfigClient(data.engine);
+  if (engineRoleInput) engineRoleInput.value = extractionEngineConfig.role;
+  if (engineObjectiveInput) engineObjectiveInput.value = extractionEngineConfig.objective.join("\n");
+  if (engineClosingInput) engineClosingInput.value = extractionEngineConfig.closing.join("\n");
+  renderEngineSections();
+  engineConfigStatus.textContent = "Edit sections and save. This will become the final prompt.";
+}
+
+async function saveExtractionEngineConfig() {
+  if (!engineConfigStatus || !extractionEngineConfig) return;
+  syncEngineTopFields();
+  extractionEngineConfig.sections = extractionEngineConfig.sections
+    .map((section) => ({
+      title: String(section.title || "").trim(),
+      items: Array.isArray(section.items) ? section.items.map((item) => String(item || "").trim()).filter(Boolean) : [],
+    }))
+    .filter((section) => section.title && section.items.length);
+
+  if (!extractionEngineConfig.sections.length) {
+    engineConfigStatus.textContent = "Add at least one section with one point.";
+    return;
+  }
+
+  engineConfigStatus.textContent = "Saving...";
+  const res = await fetch("/api/config/extraction-engine", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ engine: extractionEngineConfig }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    engineConfigStatus.textContent = data.detail || "Failed to save extraction engine.";
+    return;
+  }
+  const data = await res.json();
+  extractionEngineConfig = normalizeEngineConfigClient(data.engine);
+  renderEngineSections();
+  engineConfigStatus.textContent = "Saved. New settings will be used in the next summary run.";
+  closeExtractionEngineModal();
+}
 
 function downloadAnalysis() {
   const analysisText = (asset?.summary || "").trim() || summaryBox.innerText.trim();
@@ -870,5 +1062,89 @@ captureBtn.addEventListener("click", async () => {
 
 summarizeBtn.addEventListener("click", () => runSummaryPipeline({ captureFirst: true }));
 downloadAnalysisBtn.addEventListener("click", downloadAnalysis);
+openExtractionEngineBtn.addEventListener("click", async () => {
+  openExtractionEngineModal();
+  await loadExtractionEngineConfig();
+});
+closeEngineConfigBtn.addEventListener("click", closeExtractionEngineModal);
+saveEngineConfigBtn.addEventListener("click", saveExtractionEngineConfig);
+
+addEngineSectionBtn.addEventListener("click", () => {
+  if (!extractionEngineConfig) return;
+  syncEngineTopFields();
+  extractionEngineConfig.sections.push({
+    title: "New Section",
+    items: ["New extraction point"],
+  });
+  renderEngineSections();
+});
+
+engineSections.addEventListener("input", (event) => {
+  if (!extractionEngineConfig) return;
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) return;
+
+  const sectionIndex = Number(target.dataset.sectionIndex);
+  if (!Number.isFinite(sectionIndex) || !extractionEngineConfig.sections[sectionIndex]) return;
+
+  if (target.dataset.engineField === "title") {
+    extractionEngineConfig.sections[sectionIndex].title = target.value;
+    return;
+  }
+  if (target.dataset.engineField === "item") {
+    const pointIndex = Number(target.dataset.pointIndex);
+    if (!Number.isFinite(pointIndex) || !extractionEngineConfig.sections[sectionIndex].items[pointIndex]) return;
+    extractionEngineConfig.sections[sectionIndex].items[pointIndex] = target.value;
+  }
+});
+
+engineSections.addEventListener("click", (event) => {
+  if (!extractionEngineConfig) return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const button = target.closest("button[data-engine-action]");
+  if (!button) return;
+
+  const action = button.dataset.engineAction;
+  const sectionIndex = Number(button.dataset.sectionIndex);
+  if (!Number.isFinite(sectionIndex) || !extractionEngineConfig.sections[sectionIndex]) return;
+
+  if (action === "remove-section") {
+    extractionEngineConfig.sections.splice(sectionIndex, 1);
+    if (!extractionEngineConfig.sections.length) {
+      extractionEngineConfig.sections.push({ title: "New Section", items: ["New extraction point"] });
+    }
+    renderEngineSections();
+    return;
+  }
+
+  if (action === "add-point") {
+    extractionEngineConfig.sections[sectionIndex].items.push("New extraction point");
+    renderEngineSections();
+    return;
+  }
+
+  if (action === "remove-point") {
+    const pointIndex = Number(button.dataset.pointIndex);
+    if (!Number.isFinite(pointIndex)) return;
+    extractionEngineConfig.sections[sectionIndex].items.splice(pointIndex, 1);
+    if (!extractionEngineConfig.sections[sectionIndex].items.length) {
+      extractionEngineConfig.sections[sectionIndex].items.push("New extraction point");
+    }
+    renderEngineSections();
+  }
+});
+
+extractionEngineModal.addEventListener("click", (event) => {
+  if (event.target === extractionEngineModal) {
+    closeExtractionEngineModal();
+  }
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && extractionEngineModal && !extractionEngineModal.classList.contains("hidden")) {
+    closeExtractionEngineModal();
+  }
+});
 
 boot();
