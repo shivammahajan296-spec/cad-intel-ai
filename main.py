@@ -734,6 +734,121 @@ def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
     )
 
 
+def _generate_compare_report(payload: dict[str, Any]) -> tuple[str, str, str]:
+    config = _load_config()
+    env_url = os.getenv("STRAIVE_SUMMARY_URL", "").strip()
+    saved_url = str(config.get("straive_summary_url", "")).strip()
+    if _is_valid_http_url(env_url):
+        straive_url = env_url
+    elif _is_valid_http_url(saved_url):
+        straive_url = saved_url
+    else:
+        straive_url = DEFAULT_STRAIVE_SUMMARY_URL
+
+    straive_model = os.getenv("STRAIVE_MODEL", "").strip() or DEFAULT_STRAIVE_MODEL
+    try:
+        straive_timeout = int(os.getenv("STRAIVE_TIMEOUT_SECONDS", str(DEFAULT_STRAIVE_TIMEOUT_SECONDS)))
+    except ValueError:
+        straive_timeout = DEFAULT_STRAIVE_TIMEOUT_SECONDS
+    api_key = os.getenv("STRAIVE_API_KEY", "").strip() or str(config.get("straive_api_key", "")).strip()
+
+    summary_a = str(payload.get("summary_a", "") or "")[:3500]
+    summary_b = str(payload.get("summary_b", "") or "")[:3500]
+
+    prompt = (
+        "You are a senior CAD engineering reviewer. Compare Asset A vs Asset B and return:\n"
+        "1) Key differentiators (5-8 bullets)\n"
+        "2) Manufacturing impact comparison\n"
+        "3) Complexity/risk comparison\n"
+        "4) Recommendation: which asset needs higher review priority and why\n"
+        "Keep output concise, technical, and evidence-based."
+    )
+
+    compare_context = (
+        "Asset A analysis:\n"
+        f"{summary_a or 'No summary available.'}\n\n"
+        "Asset B analysis:\n"
+        f"{summary_b or 'No summary available.'}\n"
+    )
+
+    if straive_url and api_key:
+        payload_json = {
+            "model": straive_model,
+            "temperature": 0.1,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": f"{prompt}\n\n{compare_context}"}],
+                }
+            ],
+        }
+        req = request.Request(
+            straive_url,
+            data=json.dumps(payload_json).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        try:
+            with request.urlopen(req, timeout=straive_timeout) as resp:
+                raw = resp.read().decode("utf-8")
+            parsed = json.loads(raw)
+            choices = parsed.get("choices", [])
+            if isinstance(choices, list) and choices:
+                message = choices[0].get("message", {}) if isinstance(choices[0], dict) else {}
+                content = message.get("content")
+                if isinstance(content, str) and content.strip():
+                    return content.strip(), "straive", ""
+                if isinstance(content, list):
+                    text_parts = []
+                    for part in content:
+                        if isinstance(part, dict) and part.get("type") == "text":
+                            text = str(part.get("text", "")).strip()
+                            if text:
+                                text_parts.append(text)
+                    if text_parts:
+                        return "\n".join(text_parts).strip(), "straive", ""
+            return (
+                "Comparison report unavailable: invalid Straive response shape.",
+                "fallback",
+                "invalid_straive_compare_response",
+            )
+        except error.HTTPError as exc:
+            return (
+                f"Comparison report unavailable: Straive HTTP {exc.code}.",
+                "fallback",
+                f"straive_compare_http_error_{exc.code}",
+            )
+        except TimeoutError:
+            return (
+                "Comparison report unavailable: Straive request timed out.",
+                "fallback",
+                "straive_compare_timeout",
+            )
+        except (error.URLError, ValueError, json.JSONDecodeError):
+            return (
+                "Comparison report unavailable: Straive request failed.",
+                "fallback",
+                "straive_compare_request_failed",
+            )
+
+    summary_words_a = len([w for w in re.split(r"\W+", summary_a) if w])
+    summary_words_b = len([w for w in re.split(r"\W+", summary_b) if w])
+    summary_delta = summary_words_a - summary_words_b
+
+    report = (
+        "Key Differentiators\n"
+        "- Comparison generated from existing analysis text only.\n"
+        f"- Analysis depth delta in words (A-B): {summary_delta}\n\n"
+        "Recommendation\n"
+        "- Prioritize manual review of the asset with higher inferred complexity and manufacturing risk in the analysis."
+    )
+    return report, "fallback", "deterministic_compare_fallback"
+
+
 class SummarizeRequest(BaseModel):
     asset_id: str
     source_type: str
@@ -1224,6 +1339,17 @@ def compare_assets(payload: CompareRequest) -> dict[str, Any]:
             f"Summary detail (word count): {_count_words(summary_a)} vs {_count_words(summary_b)}",
         ],
     }
+    compare_report, compare_source, compare_reason = _generate_compare_report(
+        {
+            "a": compare["a"],
+            "b": compare["b"],
+            "summary_a": summary_a,
+            "summary_b": summary_b,
+        }
+    )
+    compare["compare_report"] = compare_report
+    compare["compare_source"] = compare_source
+    compare["compare_reason"] = compare_reason
     return compare
 
 

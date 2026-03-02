@@ -512,6 +512,39 @@ button:hover,
   color: #4f4f57;
 }
 
+.compare-report {
+  white-space: normal;
+  line-height: 1.6;
+}
+
+.compare-report h5 {
+  margin: 8px 0 6px;
+  color: #2f3036;
+  font-size: 0.95rem;
+}
+
+.compare-report p,
+.compare-report ul,
+.compare-report ol {
+  margin: 0 0 8px;
+}
+
+.compare-report ul,
+.compare-report ol {
+  padding-left: 18px;
+}
+
+.compare-report li {
+  margin: 4px 0;
+}
+
+.compare-report code {
+  background: #f3f4f7;
+  border: 1px solid #e5e6eb;
+  border-radius: 6px;
+  padding: 1px 4px;
+}
+
 .result-card a {
   color: var(--orange-strong);
   text-decoration: none;

@@ -86,6 +86,63 @@ function showSearch(items) {
     .join("");
 }
 
+function renderInlineMarkdown(text) {
+  let out = escapeHtml(text || "");
+  out = out.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+  out = out.replace(/\*(.+?)\*/g, "<em>$1</em>");
+  return out;
+}
+
+function renderReportHtml(text) {
+  const lines = String(text || "").split("\n");
+  const html = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    if (!line) {
+      i += 1;
+      continue;
+    }
+    if (/^#{1,6}\s+/.test(line) || /^[A-Za-z][A-Za-z0-9\s/&()_-]{2,}:$/.test(line)) {
+      const heading = line.replace(/^#{1,6}\s+/, "").replace(/:$/, "");
+      html.push(`<h5>${renderInlineMarkdown(heading)}</h5>`);
+      i += 1;
+      continue;
+    }
+    if (/^[-*•]\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^[-*•]\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^[-*•]\s+/, ""));
+        i += 1;
+      }
+      html.push(`<ul>${items.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</ul>`);
+      continue;
+    }
+    if (/^\d+[\.\)]\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\d+[\.\)]\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^\d+[\.\)]\s+/, ""));
+        i += 1;
+      }
+      html.push(`<ol>${items.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</ol>`);
+      continue;
+    }
+    const para = [];
+    while (
+      i < lines.length &&
+      lines[i].trim() &&
+      !/^[-*•]\s+/.test(lines[i].trim()) &&
+      !/^\d+[\.\)]\s+/.test(lines[i].trim())
+    ) {
+      para.push(lines[i].trim());
+      i += 1;
+    }
+    html.push(`<p>${renderInlineMarkdown(para.join(" "))}</p>`);
+  }
+  return html.join("");
+}
+
 async function runSearch() {
   const query = (searchInput.value || "").trim();
   if (!query) {
@@ -133,6 +190,11 @@ function renderCompare(data) {
     <div class="result-card">
       <strong>Highlights</strong>
       <p>${(data.highlights || []).join("<br/>")}</p>
+    </div>
+    <div class="result-card">
+      <strong>LLM Key Differentiators Report</strong>
+      <p class="subtle">Source: ${escapeHtml(data.compare_source || "fallback")}</p>
+      <div class="compare-report">${renderReportHtml(data.compare_report || "No compare report generated.")}</div>
     </div>
   `;
 }
