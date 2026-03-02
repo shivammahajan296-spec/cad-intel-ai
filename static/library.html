@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CAD-Intel AI - Library</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="topbar">
+      <div class="brand">CAD-Intel AI</div>
+      <div class="logo-slot" aria-label="Logo placeholder"></div>
+    </header>
+    <nav class="nav">
+      <a href="/">Dashboard</a>
+      <a href="/analysis.html">Analysis</a>
+      <a class="active" href="/library.html">Asset Library</a>
+    </nav>
+
+    <section>
+      <h3>Asset Library</h3>
+      <p class="subtle">Front-view thumbnails, file names, and Straive-generated snippets.</p>
+      <div class="actions-row">
+        <button id="clearLibraryBtn" class="danger-btn" type="button">Clear Asset Library</button>
+        <p id="clearLibraryStatus" class="subtle"></p>
+      </div>
+      <div class="tool-grid">
+        <article class="tool-panel reveal">
+          <h4>Natural Language Search</h4>
+          <p class="subtle">Search by intent, material, complexity, or part description.</p>
+          <div class="actions-row">
+            <input id="searchInput" class="text-input" type="text" placeholder="e.g., high complexity aluminum bracket with side annotations" />
+            <button id="searchBtn">Search</button>
+          </div>
+          <div id="searchResults" class="search-results subtle">Run a query to see matched assets.</div>
+        </article>
+        <article class="tool-panel reveal">
+          <h4>Compare Assets</h4>
+          <p class="subtle">Select any two assets to compare metadata and analysis density.</p>
+          <div class="actions-row">
+            <select id="compareA" class="text-input"></select>
+            <select id="compareB" class="text-input"></select>
+            <button id="compareBtn">Compare</button>
+          </div>
+          <div id="compareResults" class="compare-results subtle">Choose two assets and run compare.</div>
+        </article>
+      </div>
+      <div id="assetGrid" class="asset-grid"></div>
+    </section>
+  </div>
+  <script src="/static/js/library.js"></script>
+</body>
+</html>

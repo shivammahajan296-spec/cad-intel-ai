@@ -1,0 +1,696 @@
+import base64
+import json
+import math
+import os
+import re
+import shutil
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+from urllib import error, request
+
+import ezdxf
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+try:
+    from steputils import p21
+except Exception:  # pragma: no cover
+    p21 = None
+
+try:
+    import chromadb
+except Exception:  # pragma: no cover
+    chromadb = None
+
+
+BASE_DIR = Path(__file__).resolve().parent
+UPLOAD_DIR = BASE_DIR / "uploads"
+GENERATED_DIR = BASE_DIR / "generated"
+STATIC_DIR = BASE_DIR / "static"
+DB_DIR = BASE_DIR / "vector_db"
+ASSET_DB = GENERATED_DIR / "assets.json"
+CONFIG_DB = GENERATED_DIR / "config.json"
+DEFAULT_STRAIVE_SUMMARY_URL = "https://llmfoundry.straive.com/gemini/v1beta/openai/chat/completions"
+DEFAULT_STRAIVE_MODEL = "gemini-3-pro-preview"
+
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+DB_DIR.mkdir(parents=True, exist_ok=True)
+
+if not ASSET_DB.exists():
+    ASSET_DB.write_text("{}", encoding="utf-8")
+if not CONFIG_DB.exists():
+    CONFIG_DB.write_text("{}", encoding="utf-8")
+
+app = FastAPI(title="CAD-Intel AI")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+app.mount("/generated", StaticFiles(directory=GENERATED_DIR), name="generated")
+
+
+def _load_assets() -> dict[str, Any]:
+    return json.loads(ASSET_DB.read_text(encoding="utf-8"))
+
+
+def _save_assets(data: dict[str, Any]) -> None:
+    ASSET_DB.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _sanitize(name: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9._-]", "_", name)
+
+
+def _load_config() -> dict[str, Any]:
+    return json.loads(CONFIG_DB.read_text(encoding="utf-8"))
+
+
+def _save_config(data: dict[str, Any]) -> None:
+    CONFIG_DB.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _clear_dir_contents(path: Path, keep_names: set[str] | None = None) -> int:
+    keep = keep_names or set()
+    removed = 0
+    if not path.exists():
+        return removed
+
+    for item in path.iterdir():
+        if item.name in keep:
+            continue
+        if item.is_dir():
+            shutil.rmtree(item, ignore_errors=True)
+            removed += 1
+        else:
+            try:
+                item.unlink()
+                removed += 1
+            except FileNotFoundError:
+                continue
+    return removed
+
+
+def _extract_dxf(path: Path) -> dict[str, Any]:
+    doc = ezdxf.readfile(path)
+    header = doc.header
+    modelspace = doc.modelspace()
+
+    text_entities: list[str] = []
+    preview_lines: list[list[float]] = []
+    max_segments = 7000
+
+    def _add_segment(a: tuple[float, float, float], b: tuple[float, float, float]) -> bool:
+        if len(preview_lines) // 2 >= max_segments:
+            return False
+        preview_lines.append([float(a[0]), float(a[1]), float(a[2])])
+        preview_lines.append([float(b[0]), float(b[1]), float(b[2])])
+        return True
+
+    def _point(x: float, y: float, z: float = 0.0) -> tuple[float, float, float]:
+        return (float(x), float(y), float(z))
+
+    for entity in modelspace:
+        t = entity.dxftype()
+        if t in {"TEXT", "MTEXT"}:
+            text = getattr(entity.dxf, "text", "") or getattr(entity, "text", "")
+            if text:
+                text_entities.append(str(text).strip())
+        elif t == "LINE":
+            try:
+                s = entity.dxf.start
+                e = entity.dxf.end
+                if not _add_segment(_point(s.x, s.y, getattr(s, "z", 0.0)), _point(e.x, e.y, getattr(e, "z", 0.0))):
+                    break
+            except Exception:
+                continue
+        elif t == "LWPOLYLINE":
+            try:
+                points = [_point(p[0], p[1], 0.0) for p in entity.get_points("xy")]
+                for idx in range(len(points) - 1):
+                    if not _add_segment(points[idx], points[idx + 1]):
+                        break
+                if entity.closed and len(points) > 2:
+                    _add_segment(points[-1], points[0])
+            except Exception:
+                continue
+        elif t == "POLYLINE":
+            try:
+                verts = [_point(v.dxf.location.x, v.dxf.location.y, v.dxf.location.z) for v in entity.vertices]
+                for idx in range(len(verts) - 1):
+                    if not _add_segment(verts[idx], verts[idx + 1]):
+                        break
+                if entity.is_closed and len(verts) > 2:
+                    _add_segment(verts[-1], verts[0])
+            except Exception:
+                continue
+        elif t in {"ARC", "CIRCLE"}:
+            try:
+                center = entity.dxf.center
+                radius = float(entity.dxf.radius)
+                start_angle = float(getattr(entity.dxf, "start_angle", 0.0))
+                end_angle = float(getattr(entity.dxf, "end_angle", 360.0))
+                if t == "CIRCLE":
+                    end_angle = start_angle + 360.0
+                if end_angle <= start_angle:
+                    end_angle += 360.0
+                steps = max(20, min(80, int((end_angle - start_angle) / 6)))
+                prev = None
+                for step in range(steps + 1):
+                    ang = (start_angle + (end_angle - start_angle) * (step / steps)) * (3.141592653589793 / 180.0)
+                    px = center.x + radius * float(math.cos(ang))
+                    py = center.y + radius * float(math.sin(ang))
+                    cur = _point(px, py, getattr(center, "z", 0.0))
+                    if prev:
+                        if not _add_segment(prev, cur):
+                            break
+                    prev = cur
+            except Exception:
+                continue
+
+    metadata = {
+        "author": header.get("$LASTSAVEDBY") or header.get("$AUTHOR") or "Unknown",
+        "version": header.get("$ACADVER", "Unknown"),
+        "created_date": header.get("$TDCREATE", "Unknown"),
+    }
+    return {
+        "type": "dxf",
+        "metadata": metadata,
+        "texts": text_entities,
+        "preview_lines": preview_lines,
+    }
+
+
+def _step_hierarchy(path: Path) -> dict[str, Any]:
+    hierarchy: list[str] = []
+    if p21:
+        try:
+            step_file = p21.readfile(str(path))
+            for line in str(step_file).splitlines()[:300]:
+                if "PRODUCT" in line or "MANIFOLD_SOLID_BREP" in line:
+                    hierarchy.append(line.strip())
+        except Exception:
+            hierarchy = []
+
+    if not hierarchy:
+        hierarchy = ["STEP hierarchy parsing unavailable; extracted basic file metadata only."]
+
+    return {
+        "type": "step",
+        "metadata": {
+            "author": "Unknown",
+            "version": "STEP",
+            "created_date": datetime.utcnow().isoformat(),
+        },
+        "hierarchy": hierarchy[:50],
+        "glb": None,
+        "step_path": f"/uploads/{path.name}",
+    }
+
+
+def _index_asset(asset_id: str, filename: str, text_blob: str, summary: str) -> None:
+    if not chromadb:
+        return
+
+    client = chromadb.PersistentClient(path=str(DB_DIR))
+    collection = client.get_or_create_collection(name="cad_assets")
+    collection.upsert(
+        ids=[asset_id],
+        documents=[f"{filename}\n{text_blob}\n{summary}"],
+        metadatas=[{"filename": filename}],
+    )
+
+
+def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
+    prompt = payload.get("prompt", "")
+    config = _load_config()
+    straive_url = (
+        os.getenv("STRAIVE_SUMMARY_URL", "").strip()
+        or str(config.get("straive_summary_url", "")).strip()
+        or DEFAULT_STRAIVE_SUMMARY_URL
+    )
+    straive_model = os.getenv("STRAIVE_MODEL", "").strip() or DEFAULT_STRAIVE_MODEL
+    api_key = os.getenv("STRAIVE_API_KEY", "").strip() or str(
+        config.get("straive_api_key", "")
+    ).strip()
+    if straive_url and api_key:
+        try:
+            source_type = payload.get("source_type", "unknown")
+            metadata = payload.get("metadata", {})
+            text = payload.get("text", "")
+            screenshots = payload.get("screenshots", []) or []
+
+            merged_prompt = (
+                f"{prompt}\n\n"
+                f"Source type: {source_type}\n"
+                f"Metadata: {json.dumps(metadata, ensure_ascii=True)}\n\n"
+                f"Extracted CAD text:\n{text[:12000]}"
+            )
+            content_parts: list[dict[str, Any]] = [{"type": "text", "text": merged_prompt}]
+            for image_uri in screenshots[:6]:
+                if isinstance(image_uri, str) and image_uri.startswith("data:image"):
+                    content_parts.append({"type": "image_url", "image_url": {"url": image_uri}})
+
+            req_payload = {
+                "model": straive_model,
+                "messages": [{"role": "user", "content": content_parts}],
+                "temperature": 0.1,
+            }
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Authorization": f"Bearer {api_key}",
+                "x-api-key": api_key,
+            }
+
+            req = request.Request(
+                straive_url,
+                method="POST",
+                headers=headers,
+                data=json.dumps(req_payload).encode("utf-8"),
+            )
+            with request.urlopen(req, timeout=18) as resp:
+                body = resp.read().decode("utf-8", errors="ignore")
+            parsed = json.loads(body) if body else {}
+
+            # OpenAI-compatible response parsing.
+            choices = parsed.get("choices")
+            if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+                msg = choices[0].get("message")
+                if isinstance(msg, dict):
+                    content = msg.get("content")
+                    if isinstance(content, str) and content.strip():
+                        return content.strip(), "straive", ""
+                    if isinstance(content, list):
+                        text_parts: list[str] = []
+                        for part in content:
+                            if isinstance(part, dict) and part.get("type") == "text":
+                                txt = part.get("text")
+                                if isinstance(txt, str) and txt.strip():
+                                    text_parts.append(txt.strip())
+                        if text_parts:
+                            return "\n".join(text_parts).strip(), "straive", ""
+            return (
+                "Project Manager Summary: Straive response did not contain summary text. "
+                "Check model permissions or endpoint response format.",
+                "fallback",
+                "invalid_straive_response",
+            )
+        except error.HTTPError as exc:
+            return (
+                "Project Manager Summary: Straive API request failed. "
+                "Check API key, endpoint access, and model permissions.",
+                "fallback",
+                f"straive_http_error_{exc.code}",
+            )
+        except (error.URLError, TimeoutError, ValueError, json.JSONDecodeError):
+            return (
+                "Project Manager Summary: Straive API request failed due to connectivity or payload parse issue.",
+                "fallback",
+                "straive_request_failed",
+            )
+    elif not api_key:
+        return (
+            "Project Manager Summary: Straive API key is not configured. "
+            "Use 'Set Key' on dashboard to enable LLM summaries.",
+            "fallback",
+            "missing_straive_api_key",
+        )
+
+    # Deterministic fallback when external AI is unavailable.
+    meta = payload.get("metadata", {})
+    text = payload.get("text", "")
+    screenshots = payload.get("screenshots", [])
+    source_type = payload.get("source_type", "unknown")
+
+    complexity = "medium"
+    if len(text) > 1200 or len(screenshots) >= 4:
+        complexity = "high"
+    if len(text) < 200 and len(screenshots) < 2:
+        complexity = "low"
+
+    return (
+        "Project Manager Summary: "
+        f"This {source_type.upper()} asset appears to be a {complexity}-complexity design. "
+        f"Identified author: {meta.get('author', 'Unknown')}; revision/version: {meta.get('version', 'Unknown')}. "
+        "Likely material cannot be fully confirmed from metadata alone; recommend validating BOM or title block. "
+        "Part identification should prioritize assembly hierarchy tags and drawing annotations.",
+        "fallback",
+        "deterministic_fallback",
+    )
+
+
+class SummarizeRequest(BaseModel):
+    asset_id: str
+    source_type: str
+    text: str | None = ""
+    screenshots: list[str] | None = []
+
+
+class CaptureRequest(BaseModel):
+    asset_id: str
+    screenshots: list[str]
+
+
+class SearchRequest(BaseModel):
+    query: str
+
+
+class CompareRequest(BaseModel):
+    asset_id_a: str
+    asset_id_b: str
+
+
+class StraiveConfigRequest(BaseModel):
+    api_key: str | None = ""
+
+
+@app.get("/")
+def home() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/analysis.html")
+def analysis_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "analysis.html")
+
+
+@app.get("/library.html")
+def library_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "library.html")
+
+
+@app.post("/api/upload")
+async def upload_asset(file: UploadFile = File(...)) -> dict[str, Any]:
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in {".dxf", ".step", ".stp", ".glb", ".gltf", ".stl"}:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+
+    asset_id = uuid.uuid4().hex
+    safe_name = _sanitize(file.filename or f"asset{ext}")
+    stored_name = f"{asset_id}_{safe_name}"
+    target = UPLOAD_DIR / stored_name
+    content = await file.read()
+    target.write_bytes(content)
+
+    record: dict[str, Any]
+    if ext == ".dxf":
+        record = _extract_dxf(target)
+    elif ext in {".step", ".stp"}:
+        record = _step_hierarchy(target)
+    else:
+        # Preconverted mesh formats for quick preview.
+        record = {
+            "type": "step",
+            "metadata": {
+                "author": "Unknown",
+                "version": ext.upper().lstrip("."),
+                "created_date": datetime.utcnow().isoformat(),
+            },
+            "hierarchy": ["Direct mesh upload"],
+            "glb": f"/uploads/{stored_name}",
+        }
+
+    assets = _load_assets()
+    assets[asset_id] = {
+        "asset_id": asset_id,
+        "filename": safe_name,
+        "uploaded_at": datetime.utcnow().isoformat(),
+        "metadata": record.get("metadata", {}),
+        "source_type": record["type"],
+        "texts": record.get("texts", []),
+        "hierarchy": record.get("hierarchy", []),
+        "preview_lines": record.get("preview_lines", []),
+        "glb": record.get("glb"),
+        "step_path": record.get("step_path"),
+        "screenshots": [],
+        "summary": "",
+    }
+    _save_assets(assets)
+
+    return {"asset_id": asset_id, "analysis_url": f"/analysis.html?asset_id={asset_id}"}
+
+
+@app.get("/api/assets")
+def list_assets() -> dict[str, Any]:
+    assets = _load_assets()
+    return {"items": list(assets.values())}
+
+
+@app.post("/api/assets/clear")
+def clear_assets() -> dict[str, Any]:
+    assets = _load_assets()
+    cleared_assets = len(assets)
+    _save_assets({})
+
+    removed_uploads = _clear_dir_contents(UPLOAD_DIR)
+    removed_generated = _clear_dir_contents(GENERATED_DIR, keep_names={ASSET_DB.name, CONFIG_DB.name})
+    _clear_dir_contents(DB_DIR)
+    DB_DIR.mkdir(parents=True, exist_ok=True)
+
+    return {
+        "status": "cleared",
+        "cleared_assets": cleared_assets,
+        "removed_uploads": removed_uploads,
+        "removed_generated": removed_generated,
+    }
+
+
+@app.get("/api/assets/{asset_id}")
+def get_asset(asset_id: str) -> dict[str, Any]:
+    assets = _load_assets()
+    if asset_id not in assets:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    asset = assets[asset_id]
+    changed = False
+
+    # Backfill DXF preview for previously uploaded assets.
+    if asset.get("source_type") == "dxf" and not asset.get("preview_lines"):
+        candidate = UPLOAD_DIR / f"{asset_id}_{_sanitize(asset.get('filename', ''))}"
+        if candidate.exists():
+            try:
+                extracted = _extract_dxf(candidate)
+                asset["preview_lines"] = extracted.get("preview_lines", [])
+                if not asset.get("texts"):
+                    asset["texts"] = extracted.get("texts", [])
+                changed = True
+            except Exception:
+                pass
+
+    if asset.get("source_type") == "step" and not asset.get("step_path"):
+        candidate = UPLOAD_DIR / f"{asset_id}_{_sanitize(asset.get('filename', ''))}"
+        if candidate.exists():
+            asset["step_path"] = f"/uploads/{candidate.name}"
+            changed = True
+
+    if changed:
+        assets[asset_id] = asset
+        _save_assets(assets)
+    return asset
+
+
+@app.get("/api/config/straive")
+def get_straive_config() -> dict[str, str]:
+    config = _load_config()
+    env_url = os.getenv("STRAIVE_SUMMARY_URL", "").strip()
+    saved_url = str(config.get("straive_summary_url", "")).strip()
+    effective_url = env_url or saved_url or DEFAULT_STRAIVE_SUMMARY_URL
+    env_key = os.getenv("STRAIVE_API_KEY", "").strip()
+    saved_key = str(config.get("straive_api_key", "")).strip()
+    return {
+        "summary_url": effective_url,
+        "default_summary_url": env_url or DEFAULT_STRAIVE_SUMMARY_URL,
+        "api_key_set": "yes" if (env_key or saved_key) else "no",
+    }
+
+
+@app.post("/api/config/straive")
+def set_straive_config(payload: StraiveConfigRequest) -> dict[str, str]:
+    config = _load_config()
+    config["straive_api_key"] = (payload.api_key or "").strip()
+    _save_config(config)
+    return {"status": "saved"}
+
+
+@app.post("/api/capture")
+def save_capture(payload: CaptureRequest) -> dict[str, Any]:
+    assets = _load_assets()
+    asset = assets.get(payload.asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    cleaned: list[str] = []
+    for idx, image_uri in enumerate(payload.screenshots):
+        if not image_uri.startswith("data:image"):
+            continue
+        b64 = image_uri.split(",", 1)[1]
+        img_bytes = base64.b64decode(b64)
+        fname = f"{payload.asset_id}_view_{idx + 1}.png"
+        out_path = GENERATED_DIR / fname
+        out_path.write_bytes(img_bytes)
+        cleaned.append(f"/generated/{fname}")
+
+    asset["screenshots"] = cleaned
+    assets[payload.asset_id] = asset
+    _save_assets(assets)
+    return {"saved": len(cleaned), "screenshots": cleaned}
+
+
+@app.post("/api/summarize")
+def summarize(payload: SummarizeRequest) -> dict[str, Any]:
+    assets = _load_assets()
+    asset = assets.get(payload.asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    prompt = (
+        "Summarize this technical drawing for a Project Manager. "
+        "Focus on material, complexity, and part identification. "
+        "Use professional but accessible language."
+    )
+    summary, summary_source, summary_reason = _generate_summary(
+        {
+            "source_type": payload.source_type,
+            "metadata": asset.get("metadata", {}),
+            "text": payload.text or "",
+            "screenshots": payload.screenshots or [],
+            "prompt": prompt,
+        }
+    )
+
+    asset["summary"] = summary
+    asset["summary_source"] = summary_source
+    asset["summary_reason"] = summary_reason
+    assets[payload.asset_id] = asset
+    _save_assets(assets)
+
+    search_text = "\n".join(asset.get("texts", []) + asset.get("hierarchy", []))
+    _index_asset(asset["asset_id"], asset["filename"], search_text, summary)
+
+    return {
+        "summary": summary,
+        "prompt": prompt,
+        "summary_source": summary_source,
+        "summary_reason": summary_reason,
+        "screenshots_count": len(payload.screenshots or []),
+    }
+
+
+@app.post("/api/search")
+def semantic_search(payload: SearchRequest) -> dict[str, Any]:
+    query = payload.query.strip()
+    if not query:
+        return {"items": []}
+
+    if chromadb:
+        try:
+            client = chromadb.PersistentClient(path=str(DB_DIR))
+            collection = client.get_or_create_collection(name="cad_assets")
+            results = collection.query(query_texts=[query], n_results=6)
+
+            items = []
+            for idx, asset_id in enumerate(results.get("ids", [[]])[0]):
+                items.append(
+                    {
+                        "asset_id": asset_id,
+                        "document": results.get("documents", [[]])[0][idx],
+                        "metadata": results.get("metadatas", [[]])[0][idx],
+                        "distance": results.get("distances", [[]])[0][idx]
+                        if results.get("distances")
+                        else None,
+                    }
+                )
+            if items:
+                return {"items": items}
+        except Exception:
+            pass
+
+    # Lexical fallback so search still works without vector DB.
+    terms = [t for t in re.split(r"\W+", query.lower()) if t]
+    assets = _load_assets()
+    scored: list[dict[str, Any]] = []
+    for asset in assets.values():
+        blob = " ".join(
+            [
+                asset.get("filename", ""),
+                asset.get("summary", ""),
+                " ".join(asset.get("texts", [])),
+                " ".join(asset.get("hierarchy", [])),
+            ]
+        ).lower()
+        if not blob:
+            continue
+        score = sum(blob.count(term) for term in terms)
+        if score > 0:
+            scored.append(
+                {
+                    "asset_id": asset.get("asset_id"),
+                    "document": (asset.get("summary") or "Match found in metadata/text.")[:350],
+                    "metadata": {"filename": asset.get("filename")},
+                    "distance": round(1 / (score + 1), 4),
+                }
+            )
+
+    scored.sort(key=lambda item: item["distance"])
+    return {"items": scored[:6]}
+
+
+@app.post("/api/compare")
+def compare_assets(payload: CompareRequest) -> dict[str, Any]:
+    assets = _load_assets()
+    asset_a = assets.get(payload.asset_id_a)
+    asset_b = assets.get(payload.asset_id_b)
+    if not asset_a or not asset_b:
+        raise HTTPException(status_code=404, detail="One or both assets not found")
+
+    def _count_words(text: str) -> int:
+        return len([w for w in re.split(r"\W+", text) if w])
+
+    summary_a = asset_a.get("summary", "") or ""
+    summary_b = asset_b.get("summary", "") or ""
+
+    compare = {
+        "a": {
+            "asset_id": asset_a.get("asset_id"),
+            "filename": asset_a.get("filename"),
+            "source_type": asset_a.get("source_type"),
+            "author": asset_a.get("metadata", {}).get("author", "Unknown"),
+            "version": asset_a.get("metadata", {}).get("version", "Unknown"),
+            "texts_count": len(asset_a.get("texts", [])),
+            "hierarchy_count": len(asset_a.get("hierarchy", [])),
+            "screenshots_count": len(asset_a.get("screenshots", [])),
+            "summary_words": _count_words(summary_a),
+        },
+        "b": {
+            "asset_id": asset_b.get("asset_id"),
+            "filename": asset_b.get("filename"),
+            "source_type": asset_b.get("source_type"),
+            "author": asset_b.get("metadata", {}).get("author", "Unknown"),
+            "version": asset_b.get("metadata", {}).get("version", "Unknown"),
+            "texts_count": len(asset_b.get("texts", [])),
+            "hierarchy_count": len(asset_b.get("hierarchy", [])),
+            "screenshots_count": len(asset_b.get("screenshots", [])),
+            "summary_words": _count_words(summary_b),
+        },
+        "highlights": [
+            f"Source types: {asset_a.get('source_type', 'unknown').upper()} vs {asset_b.get('source_type', 'unknown').upper()}",
+            f"Annotation density (text entities): {len(asset_a.get('texts', []))} vs {len(asset_b.get('texts', []))}",
+            f"Hierarchy depth markers: {len(asset_a.get('hierarchy', []))} vs {len(asset_b.get('hierarchy', []))}",
+            f"Summary detail (word count): {_count_words(summary_a)} vs {_count_words(summary_b)}",
+        ],
+    }
+    return compare
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}

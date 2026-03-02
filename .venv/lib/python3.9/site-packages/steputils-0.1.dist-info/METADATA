@@ -1,0 +1,118 @@
+Metadata-Version: 2.1
+Name: steputils
+Version: 0.1
+Summary: A Python package to read/write STEP data files.
+Home-page: http://github.com/mozman/steputils
+Download-URL: https://pypi.org/project/steputils/
+Author: Manfred Moitzi
+Author-email: me@mozman.at
+License: MIT License
+Project-URL: Documentation, https://steputils.readthedocs.io
+Project-URL: Wiki, https://github.com/mozman/steputils/wiki
+Project-URL: Source, http://github.com/mozman/steputils
+Project-URL: Bug Tracker, https://github.com/mozman/steputils/issues
+Keywords: IFC4,CAD,STEP
+Platform: OS Independent
+Classifier: Development Status :: 2 - Pre-Alpha
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: Implementation :: CPython
+Classifier: Programming Language :: Python :: Implementation :: PyPy
+Classifier: Intended Audience :: Developers
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Provides: steputils
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown
+License-File: LICENSE.txt
+Requires-Dist: pyparsing
+Requires-Dist: antlr4-python3-runtime
+
+
+STEPutils
+=========
+
+THIS PROJECT IS IN PLANNING STATE!
+----------------------------------
+
+Abstract
+--------
+
+STEPutils is a Python package to manage STEP model data.
+
+The intention of this package is to build a simple document object model (DOM) for STEP model data like 
+`xml.etree.ElementTree` for XML data. STEPutils could be used as import/export layer for CAD like application. 
+The DOM has methods to traverse, create and delete object nodes but no further CAD-like functionality like translating, 
+scaling or rotating objects, if you need that - you are looking for a CAD application like 
+[FreeCAD](https://www.freecadweb.org/).   
+
+For more information about the STEP (ISO 10303) standard read this 
+[Wikipedia](https://en.wikipedia.org/w/index.php?title=ISO_10303) article.
+
+Quick-Info
+----------
+
+- Python package to manage a simple document object model (DOM) for STEP model data
+- the intended audience are developers
+- requires at least Python 3.7
+- OS independent
+- tested with GitHub actions for windows-latest and linux-latest
+- MIT-License
+
+Installation
+------------
+
+Install with pip for Python 3.7 and later:
+
+    pip install steputils
+
+Install latest development version with pip from GitHub:
+
+    pip install git+https://github.com/mozman/steputils.git@master
+
+or from source:
+
+    python setup.py install
+
+Documentation
+-------------
+
+https://steputils.readthedocs.io
+
+Contribution
+------------
+
+The source code of STEPutils can be found at __GitHub__, target your pull requests to the `master` branch:
+
+http://github.com/mozman/steputils
+
+News
+====
+
+Version 0.1b0
+-------------
+
+- BUGFIX: [#3](https://github.com/mozman/steputils/pull/3) multiline string support
+
+Version 0.1a5
+-------------
+
+- EXPRESS parser implemented with antlr4
+
+Version 0.1a2
+-------------
+
+- optimized STEP-file loader and serializer, speed gain about 7x
+- renamed module ``stepfile`` into ``p21`` and implemented factory functions at module level
+
+Version 0.1a1
+-------------
+
+- pre-alpha state
+- STEP-file loader and serializer works
+
+

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CAD-Intel AI - Analysis</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="topbar">
+      <div class="brand">CAD-Intel AI</div>
+      <div class="logo-slot" aria-label="Logo placeholder"></div>
+    </header>
+    <nav class="nav">
+      <a href="/">Dashboard</a>
+      <a class="active" href="/analysis.html">Analysis</a>
+      <a href="/library.html">Asset Library</a>
+    </nav>
+
+    <section class="analysis-layout">
+      <div class="viewer-wrap">
+        <h3>3D Viewer</h3>
+        <div id="viewerCanvas"></div>
+        <div class="actions-row">
+          <button id="captureBtn">Run Auto-Analyzer</button>
+          <button id="summarizeBtn">Generate Straive Summary</button>
+        </div>
+      </div>
+
+      <aside class="panel">
+        <h3>Intelligence Panel</h3>
+        <table class="meta-table">
+          <tbody id="metaRows"></tbody>
+        </table>
+        <div id="summaryBox" class="summary-callout">Summary will appear here.</div>
+      </aside>
+    </section>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/occt-import-js@0.0.12/dist/occt-import-js.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.168.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.168.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="/static/js/analysis.js"></script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CAD-Intel AI</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="topbar">
+      <div class="brand">CAD-Intel AI</div>
+      <div class="top-actions">
+        <button id="openStraiveModalBtn" class="mini-btn" type="button">Set Key</button>
+        <div class="logo-slot" aria-label="Logo placeholder"></div>
+      </div>
+    </header>
+
+    <nav class="nav">
+      <a class="active" href="/">Dashboard</a>
+      <a href="/analysis.html">Analysis</a>
+      <a href="/library.html">Asset Library</a>
+    </nav>
+
+    <section class="hero">
+      <h1>Industrial CAD insight, with an operations-first interface.</h1>
+      <p class="subtle">
+        Upload CAD files, inspect model geometry, and generate PM-ready summaries.
+      </p>
+    </section>
+
+    <section class="grid grid-4">
+      <article class="feature-card">
+        <h3>Extract CAD Metadata</h3>
+        <p>Index file names, uploaded dates, author fields, and revision/version metadata from every drawing.</p>
+      </article>
+      <article class="feature-card">
+        <h3>Improve CAD Search</h3>
+        <p>Natural-language retrieval across title blocks, annotation text, and AI-generated technical summaries.</p>
+      </article>
+      <article class="feature-card">
+        <h3>Create Searchable Archives</h3>
+        <p>Persist extracted text and hierarchy notes to build historical design intelligence over time.</p>
+      </article>
+      <article class="feature-card">
+        <h3>Boost Efficiency</h3>
+        <p>Non-CAD stakeholders can inspect model views and read plain-English explanations in seconds.</p>
+      </article>
+    </section>
+
+    <section id="dropzone" class="dropzone reveal">
+      <h3>Drop CAD Files Here</h3>
+      <p class="subtle">Accepted: <strong>.dxf</strong>, <strong>.step</strong>, <strong>.stp</strong></p>
+      <input id="fileInput" type="file" accept=".dxf,.step,.stp,.glb,.gltf,.stl" />
+      <div class="actions-row">
+        <button id="uploadBtn">Upload and Analyze</button>
+      </div>
+      <p id="uploadStatus" class="subtle"></p>
+    </section>
+  </div>
+
+  <div id="straiveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="straiveModalTitle">
+    <div class="modal-card">
+      <h3 id="straiveModalTitle">Straive Setup</h3>
+      <p class="subtle">Set API key. Endpoint is fixed in backend.</p>
+      <div class="actions-row">
+        <input id="modalStraiveKey" class="text-input" type="password" placeholder="Straive API key" />
+      </div>
+      <div class="actions-row">
+        <button id="saveStraiveModalBtn" type="button">Save Settings</button>
+      </div>
+      <p id="modalStraiveStatus" class="subtle"></p>
+    </div>
+  </div>
+
+  <script src="/static/js/index.js"></script>
+</body>
+</html>
