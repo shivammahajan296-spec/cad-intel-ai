@@ -216,15 +216,17 @@ button:hover,
   border: 1px solid #ebb586;
   border-radius: 10px;
   background: linear-gradient(180deg, rgba(239, 127, 26, 0.1) 0, rgba(239, 127, 26, 0.04) 100%);
-  padding: 16px;
-  line-height: 1.6;
-  font-size: 1rem;
-  box-shadow: 0 8px 18px rgba(40, 41, 48, 0.06);
+  padding: 18px;
+  line-height: 1.65;
+  font-size: 1.04rem;
+  box-shadow: 0 10px 22px rgba(40, 41, 48, 0.08);
+  max-height: 72vh;
+  overflow: auto;
 }
 
 .summary-meta {
-  font-size: 0.86rem;
-  margin-bottom: 10px;
+  font-size: 0.88rem;
+  margin-bottom: 12px;
 }
 
 .summary-badges {
@@ -277,15 +279,16 @@ button:hover,
 
 .summary-grid {
   display: grid;
-  gap: 10px;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
 .summary-card {
   border: 1px solid #e3e4e8;
   border-radius: 10px;
-  padding: 11px 12px;
+  padding: 13px 14px;
   background: #fff;
-  box-shadow: 0 6px 14px rgba(36, 37, 45, 0.04);
+  box-shadow: 0 8px 16px rgba(36, 37, 45, 0.05);
 }
 
 .summary-card-head {
@@ -297,7 +300,7 @@ button:hover,
 
 .summary-card-head h4 {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 1.02rem;
 }
 
 .summary-icon {
@@ -320,9 +323,9 @@ button:hover,
 }
 
 .summary-card li {
-  margin: 4px 0;
+  margin: 6px 0;
   color: #3f4048;
-  line-height: 1.5;
+  line-height: 1.58;
 }
 
 .tool-grid {
