@@ -30,6 +30,10 @@ body {
   padding: 18px 16px;
 }
 
+.container.container-dashboard {
+  max-width: 1220px;
+}
+
 .topbar {
   display: flex;
   justify-content: space-between;
