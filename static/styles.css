@@ -54,6 +54,12 @@ body {
   letter-spacing: 0.03em;
 }
 
+.brand-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .badge {
   background: linear-gradient(135deg, #fff4ea 0, #f4f4f6 100%);
   border: 1px solid #f0b98b;

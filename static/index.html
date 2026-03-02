@@ -9,14 +9,16 @@
 <body>
   <div class="container container-dashboard">
     <header class="topbar">
-      <div class="brand">CAD-Intel AI</div>
-      <div class="top-actions">
+      <div class="brand-wrap">
         <button
           class="ai-orb"
           type="button"
           aria-label="AI Analysis Engine Active"
           data-tooltip="AI Analysis Engine Active"
         ></button>
+        <div class="brand">CAD-Intel AI</div>
+      </div>
+      <div class="top-actions">
         <button id="openStraiveModalBtn" class="mini-btn" type="button">Set Key</button>
         <img class="logo-slot" src="/static/logo.jpg" alt="Company logo" />
       </div>
@@ -55,7 +57,7 @@
     </section>
 
     <section id="dropzone" class="dropzone reveal">
-      <h3>Drop CAD Files / technical drawings</h3>
+      <h3>Upload CAD Files or Technical Drawings</h3>
       <p class="subtle">Accepted: <strong>.dxf</strong>, <strong>.step</strong>, <strong>.stp</strong></p>
       <input id="fileInput" type="file" accept=".dxf,.step,.stp,.glb,.gltf,.stl" />
       <div class="actions-row">
