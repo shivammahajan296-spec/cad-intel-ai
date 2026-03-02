@@ -32,16 +32,12 @@ function renderStructuredSummary(structured, source = "", reason = "", screensho
     return;
   }
 
-  const badges = (structured.badges || [])
-    .map((b) => `<span class="summary-badge tone-${b.tone || "neutral"}">${b.label}</span>`)
-    .join("");
-
   const sections = [
-    { key: "part_identification", title: "Part Identification", icon: "PI" },
-    { key: "materials", title: "Materials", icon: "MT" },
-    { key: "manufacturing", title: "Manufacturing", icon: "MF" },
-    { key: "complexity", title: "Complexity", icon: "CX" },
-    { key: "recommendation", title: "Recommendation", icon: "RC" },
+    { key: "part_identification", title: "Part Identification" },
+    { key: "materials", title: "Materials" },
+    { key: "manufacturing", title: "Manufacturing" },
+    { key: "complexity", title: "Complexity" },
+    { key: "recommendation", title: "Recommendation" },
   ];
 
   const cards = sections
@@ -50,10 +46,7 @@ function renderStructuredSummary(structured, source = "", reason = "", screensho
       const list = items.map((item) => `<li>${item}</li>`).join("");
       return `
         <article class="summary-card">
-          <div class="summary-card-head">
-            <span class="summary-icon">${section.icon}</span>
-            <h4>${section.title}</h4>
-          </div>
+          <h4>${section.title}</h4>
           <ul>${list}</ul>
         </article>
       `;
@@ -61,8 +54,6 @@ function renderStructuredSummary(structured, source = "", reason = "", screensho
     .join("");
 
   summaryBox.innerHTML = `
-    <div class="summary-meta subtle">Source: ${source || "unknown"}${reason ? ` (${reason})` : ""} | Screenshots: ${screenshots}</div>
-    <div class="summary-badges">${badges}</div>
     <div class="summary-grid">${cards}</div>
   `;
 }
