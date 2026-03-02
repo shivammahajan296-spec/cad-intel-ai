@@ -77,6 +77,92 @@ body {
   display: block;
 }
 
+.ai-orb {
+  width: 60px;
+  height: 60px;
+  border-radius: 999px;
+  border: none;
+  cursor: default;
+  position: relative;
+  background: radial-gradient(circle at 30% 28%, #ffd6ae 0, #ffb36a 22%, #ef7f1a 58%, #b94d00 100%);
+  box-shadow:
+    0 0 0 1px rgba(255, 180, 109, 0.35),
+    0 0 18px rgba(239, 127, 26, 0.42),
+    0 0 38px rgba(239, 127, 26, 0.25);
+  animation: aiOrbPulse 3.2s ease-in-out infinite, aiOrbFloat 4.8s ease-in-out infinite;
+  transform-origin: center;
+  transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+  flex: 0 0 auto;
+}
+
+.ai-orb::before {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  border-radius: inherit;
+  background: radial-gradient(circle at 34% 30%, rgba(255, 255, 255, 0.92) 0, rgba(255, 255, 255, 0.28) 32%, rgba(255, 255, 255, 0) 65%);
+  pointer-events: none;
+}
+
+.ai-orb::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  background: rgba(34, 35, 40, 0.95);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 7px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.ai-orb:hover {
+  transform: scale(1.09);
+  filter: saturate(1.06);
+  box-shadow:
+    0 0 0 1px rgba(255, 193, 133, 0.45),
+    0 0 24px rgba(239, 127, 26, 0.62),
+    0 0 52px rgba(239, 127, 26, 0.35);
+}
+
+.ai-orb:hover::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@keyframes aiOrbPulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(255, 180, 109, 0.35),
+      0 0 16px rgba(239, 127, 26, 0.36),
+      0 0 34px rgba(239, 127, 26, 0.2);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(255, 189, 123, 0.4),
+      0 0 22px rgba(239, 127, 26, 0.5),
+      0 0 46px rgba(239, 127, 26, 0.3);
+  }
+}
+
+@keyframes aiOrbFloat {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -5px;
+  }
+}
+
 .mini-btn {
   padding: 7px 12px;
   font-size: 0.82rem;
