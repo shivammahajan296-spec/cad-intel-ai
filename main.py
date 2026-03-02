@@ -835,16 +835,6 @@ Suggest:
 - Manufacturing simplification ideas
 - Assembly improvement ideas
 
---------------------------------------------
-8) PARAMETRIC RECONSTRUCTION PLAN
---------------------------------------------
-If this part must be recreated in CAD:
-- Step-by-step modeling strategy
-- Order of operations
-- Key parametric variables
-- Reference planes
-- Sketch logic
-- Feature tree structure
 
 --------------------------------------------
 
