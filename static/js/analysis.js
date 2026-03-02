@@ -52,102 +52,152 @@ function renderDynamicSummary(summaryText) {
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#39;");
 
+  const renderInlineMarkdown = (text) => {
+    let out = escapeHtml(text);
+    out = out.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+    out = out.replace(/\*(.+?)\*/g, "<em>$1</em>");
+    return out;
+  };
+
+  const renderMarkdownBlocks = (lines) => {
+    const html = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i].trim();
+      if (!line) {
+        i += 1;
+        continue;
+      }
+      if (/^[-*•]\s+/.test(line)) {
+        const items = [];
+        while (i < lines.length && /^[-*•]\s+/.test(lines[i].trim())) {
+          items.push(lines[i].trim().replace(/^[-*•]\s+/, ""));
+          i += 1;
+        }
+        html.push(`<ul>${items.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</ul>`);
+        continue;
+      }
+      if (/^\d+[\.\)]\s+/.test(line)) {
+        const items = [];
+        while (i < lines.length && /^\d+[\.\)]\s+/.test(lines[i].trim())) {
+          items.push(lines[i].trim().replace(/^\d+[\.\)]\s+/, ""));
+          i += 1;
+        }
+        html.push(`<ol>${items.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</ol>`);
+        continue;
+      }
+      const para = [];
+      while (
+        i < lines.length &&
+        lines[i].trim() &&
+        !/^[-*•]\s+/.test(lines[i].trim()) &&
+        !/^\d+[\.\)]\s+/.test(lines[i].trim())
+      ) {
+        para.push(lines[i].trim());
+        i += 1;
+      }
+      html.push(`<p>${renderInlineMarkdown(para.join(" "))}</p>`);
+    }
+    return html.join("");
+  };
+
   const pillars = [
-    { order: 1, title: "Object Identification", match: ["object identification"] },
-    { order: 2, title: "Geometric Analysis", match: ["geometric analysis"] },
-    { order: 3, title: "Dimension Inference", match: ["dimension inference"] },
-    { order: 4, title: "Manufacturing Analysis", match: ["manufacturing analysis"] },
-    { order: 5, title: "DFM Review", match: ["dfm review", "design for manufacturing"] },
-    { order: 6, title: "Material Recommendation", match: ["material recommendation"] },
-    { order: 7, title: "Improvement Suggestions", match: ["improvement suggestions"] },
+    { order: 1, title: "Object Identification", keys: ["object identification"] },
+    { order: 2, title: "Geometric Analysis", keys: ["geometric analysis"] },
+    { order: 3, title: "Dimension Inference", keys: ["dimension inference"] },
+    { order: 4, title: "Manufacturing Analysis", keys: ["manufacturing analysis"] },
+    { order: 5, title: "DFM Review", keys: ["dfm review", "design for manufacturing"] },
+    { order: 6, title: "Material Recommendation", keys: ["material recommendation"] },
+    { order: 7, title: "Improvement Suggestions", keys: ["improvement suggestions"] },
   ];
 
   const normalizeHeading = (line) =>
     line
       .toLowerCase()
+      .replace(/^\s*#{1,6}\s*/, "")
       .replace(/^\s*\d+[\)\.\-]?\s*/, "")
       .replace(/:$/, "")
       .replace(/\s+/g, " ")
       .trim();
 
-  const matchPillar = (heading) => {
-    const normalized = normalizeHeading(heading);
-    return pillars.find((p) => p.match.some((m) => normalized.includes(m))) || null;
+  const findPillar = (line) => {
+    const normalized = normalizeHeading(line);
+    return pillars.find((p) => p.keys.some((k) => normalized.includes(k))) || null;
   };
 
-  const lines = summaryText
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length);
-
-  const isDivider = (line) => /^[-_]{4,}$/.test(line);
-  const isHeading = (line) =>
-    /^\s*(\d+[\)\.\-]?\s*)?[A-Za-z][A-Za-z0-9/&(),\-\s]{2,}:?\s*$/.test(line) &&
-    !/^[\-\*\u2022]/.test(line);
+  const isHeadingLine = (line) => {
+    const t = line.trim();
+    if (!t) return false;
+    if (/^[-*•]\s+/.test(t)) return false;
+    if (/^#{1,6}\s+/.test(t)) return true;
+    if (/^\d+[\)\.\-]\s+[A-Za-z]/.test(t)) return true;
+    return !!findPillar(t);
+  };
 
   const cleanHeading = (line) =>
     line
-      .replace(/^\s*\d+[\)\.\-]?\s*/, "")
+      .trim()
+      .replace(/^#{1,6}\s*/, "")
+      .replace(/^\d+[\)\.\-]\s*/, "")
       .replace(/:$/, "")
       .trim();
 
-  const toBullets = (line) => {
-    const cleaned = line.replace(/^[\-\*\u2022]\s*/, "").trim();
-    if (!cleaned) return [];
-    if (cleaned.includes(" - ")) {
-      return cleaned.split(" - ").map((item) => item.trim()).filter(Boolean);
-    }
-    return [cleaned];
-  };
-
+  const rawLines = summaryText.split("\n");
   const introLines = [];
   const sections = [];
   let current = null;
 
-  for (const line of lines) {
-    if (isDivider(line)) continue;
-    if (isHeading(line)) {
-      const heading = cleanHeading(line);
-      const pillar = matchPillar(heading);
-      current = {
-        title: pillar ? pillar.title : heading,
-        items: [],
-        pillarOrder: pillar ? pillar.order : null,
-      };
-      sections.push(current);
+  for (const raw of rawLines) {
+    const line = raw.trimEnd();
+    if (!line.trim()) {
+      if (current) current.lines.push("");
       continue;
     }
-    const bullets = toBullets(line);
-    if (bullets.length) {
-      if (current) {
-        current.items.push(...bullets);
-      } else {
-        introLines.push(...bullets);
-      }
+    if (isHeadingLine(line)) {
+      const pillar = findPillar(line);
+      current = {
+        title: pillar ? pillar.title : cleanHeading(line),
+        order: pillar ? pillar.order : null,
+        lines: [],
+      };
+      sections.push(current);
+    } else if (current) {
+      current.lines.push(line);
+    } else {
+      introLines.push(line);
     }
   }
 
-  const renderedSections = sections.filter((section) => section.items.length);
-  if (!renderedSections.length && introLines.length) {
-    renderedSections.push({ title: "Analysis", items: introLines, pillarOrder: null });
+  const cards = sections
+    .filter((s) => s.lines.some((l) => l.trim()))
+    .map((section) => {
+      const bodyHtml = renderMarkdownBlocks(section.lines);
+      const index = section.order ? `<span class="summary-index">${section.order}</span>` : "";
+      return `
+        <article class="summary-card">
+          <h4>${index}<strong>${escapeHtml(section.title)}</strong></h4>
+          <div class="summary-body">${bodyHtml}</div>
+        </article>
+      `;
+    });
+
+  if (!cards.length && introLines.length) {
+    cards.push(`
+      <article class="summary-card">
+        <h4><strong>Analysis</strong></h4>
+        <div class="summary-body">${renderMarkdownBlocks(introLines)}</div>
+      </article>
+    `);
   }
 
-  const cards = renderedSections
-    .map((section) => {
-      const itemsHtml = section.items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
-      const pillarClass = section.pillarOrder ? " summary-card-pillar" : "";
-      const pillarAttr = section.pillarOrder ? ` data-pillar="${section.pillarOrder}"` : "";
-      return `<article class="summary-card${pillarClass}"${pillarAttr}><h4>${escapeHtml(section.title)}</h4><ul>${itemsHtml}</ul></article>`;
-    })
-    .join("");
-
   const introHtml = introLines.length
-    ? `<div class="summary-intro"><p>${escapeHtml(introLines.join(" "))}</p></div>`
+    ? `<div class="summary-intro">${renderMarkdownBlocks(introLines)}</div>`
     : "";
 
   summaryBox.innerHTML = `
     ${introHtml}
-    <div class="summary-grid">${cards}</div>
+    <div class="summary-grid">${cards.join('<hr class="summary-divider" />')}</div>
   `;
 }
 

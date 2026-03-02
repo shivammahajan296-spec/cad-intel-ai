@@ -226,45 +226,61 @@ button:hover,
 
 .summary-grid {
   display: grid;
-  gap: 10px;
+  gap: 0;
   grid-template-columns: 1fr;
 }
 
 .summary-intro {
-  margin-bottom: 10px;
-  padding: 10px 12px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
   border-left: 3px solid #e6a260;
-  background: rgba(255, 255, 255, 0.55);
-  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 10px;
+  border: 1px solid #ece6df;
 }
 
-.summary-intro p {
-  margin: 0;
+.summary-intro p,
+.summary-intro ul,
+.summary-intro ol {
+  margin: 0 0 8px;
+  padding-left: 18px;
   color: #3f4048;
+  line-height: 1.65;
+}
+
+.summary-intro p:last-child,
+.summary-intro ul:last-child,
+.summary-intro ol:last-child {
+  margin-bottom: 0;
+}
+
+.summary-divider {
+  border: 0;
+  border-top: 1px solid #ebecef;
+  margin: 8px 0;
 }
 
 .summary-card {
   border: 1px solid #e3e4e8;
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: 12px;
+  padding: 14px 16px;
   background: #fff;
-  box-shadow: 0 4px 10px rgba(28, 30, 36, 0.04);
+  box-shadow: 0 6px 16px rgba(28, 30, 36, 0.05);
 }
 
-.summary-card-pillar {
-  border-left: 4px solid #ef7f1a;
-  position: relative;
-  padding-left: 44px;
+.summary-card h4 {
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.03rem;
+  color: #2f3036;
 }
 
-.summary-card-pillar::before {
-  content: attr(data-pillar);
-  position: absolute;
-  left: 10px;
-  top: 12px;
+.summary-index {
   width: 22px;
   height: 22px;
-  border-radius: 50%;
+  border-radius: 999px;
   background: #fff1e3;
   color: #a55a10;
   border: 1px solid #f2c593;
@@ -273,23 +289,43 @@ button:hover,
   justify-content: center;
   font-size: 0.74rem;
   font-weight: 800;
+  flex: 0 0 22px;
 }
 
-.summary-card h4 {
-  margin: 2px 0 6px;
-  font-size: 1.02rem;
-  color: #2f3036;
+.summary-body p,
+.summary-body ul,
+.summary-body ol {
+  margin: 0 0 10px;
+  color: #3f4048;
+  line-height: 1.66;
 }
 
-.summary-card ul {
-  margin: 0 0 2px;
+.summary-body ul,
+.summary-body ol {
   padding-left: 18px;
 }
 
-.summary-card li {
-  margin: 4px 0;
-  color: #3f4048;
-  line-height: 1.5;
+.summary-body li {
+  margin: 5px 0;
+}
+
+.summary-body strong {
+  color: #23242a;
+}
+
+.summary-body code {
+  background: #f5f6f8;
+  border: 1px solid #e9eaee;
+  border-radius: 6px;
+  padding: 1px 5px;
+  font-size: 0.9em;
+  color: #2d2f38;
+}
+
+.summary-body p:last-child,
+.summary-body ul:last-child,
+.summary-body ol:last-child {
+  margin-bottom: 0;
 }
 
 .tool-grid {
