@@ -4,7 +4,8 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 const params = new URLSearchParams(window.location.search);
-const assetId = params.get("asset_id");
+let assetId = params.get("asset_id");
+const filenameParam = params.get("filename");
 
 const metaRows = document.getElementById("metaRows");
 const summaryBox = document.getElementById("summaryBox");
@@ -43,6 +44,37 @@ function renderDynamicSummary(summaryText) {
     return;
   }
 
+  const escapeHtml = (value) =>
+    String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+
+  const pillars = [
+    { order: 1, title: "Object Identification", match: ["object identification"] },
+    { order: 2, title: "Geometric Analysis", match: ["geometric analysis"] },
+    { order: 3, title: "Dimension Inference", match: ["dimension inference"] },
+    { order: 4, title: "Manufacturing Analysis", match: ["manufacturing analysis"] },
+    { order: 5, title: "DFM Review", match: ["dfm review", "design for manufacturing"] },
+    { order: 6, title: "Material Recommendation", match: ["material recommendation"] },
+    { order: 7, title: "Improvement Suggestions", match: ["improvement suggestions"] },
+  ];
+
+  const normalizeHeading = (line) =>
+    line
+      .toLowerCase()
+      .replace(/^\s*\d+[\)\.\-]?\s*/, "")
+      .replace(/:$/, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const matchPillar = (heading) => {
+    const normalized = normalizeHeading(heading);
+    return pillars.find((p) => p.match.some((m) => normalized.includes(m))) || null;
+  };
+
   const lines = summaryText
     .split("\n")
     .map((line) => line.trim())
@@ -68,32 +100,53 @@ function renderDynamicSummary(summaryText) {
     return [cleaned];
   };
 
+  const introLines = [];
   const sections = [];
-  let current = { title: "Analysis", items: [] };
-  sections.push(current);
+  let current = null;
 
   for (const line of lines) {
     if (isDivider(line)) continue;
     if (isHeading(line)) {
-      current = { title: cleanHeading(line), items: [] };
+      const heading = cleanHeading(line);
+      const pillar = matchPillar(heading);
+      current = {
+        title: pillar ? pillar.title : heading,
+        items: [],
+        pillarOrder: pillar ? pillar.order : null,
+      };
       sections.push(current);
       continue;
     }
     const bullets = toBullets(line);
     if (bullets.length) {
-      current.items.push(...bullets);
+      if (current) {
+        current.items.push(...bullets);
+      } else {
+        introLines.push(...bullets);
+      }
     }
   }
 
-  const cards = sections
-    .filter((section) => section.items.length)
+  const renderedSections = sections.filter((section) => section.items.length);
+  if (!renderedSections.length && introLines.length) {
+    renderedSections.push({ title: "Analysis", items: introLines, pillarOrder: null });
+  }
+
+  const cards = renderedSections
     .map((section) => {
-      const itemsHtml = section.items.map((item) => `<li>${item}</li>`).join("");
-      return `<article class="summary-card"><h4>${section.title}</h4><ul>${itemsHtml}</ul></article>`;
+      const itemsHtml = section.items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+      const pillarClass = section.pillarOrder ? " summary-card-pillar" : "";
+      const pillarAttr = section.pillarOrder ? ` data-pillar="${section.pillarOrder}"` : "";
+      return `<article class="summary-card${pillarClass}"${pillarAttr}><h4>${escapeHtml(section.title)}</h4><ul>${itemsHtml}</ul></article>`;
     })
     .join("");
 
+  const introHtml = introLines.length
+    ? `<div class="summary-intro"><p>${escapeHtml(introLines.join(" "))}</p></div>`
+    : "";
+
   summaryBox.innerHTML = `
+    ${introHtml}
     <div class="summary-grid">${cards}</div>
   `;
 }
@@ -676,6 +729,21 @@ async function runSummaryPipeline({ captureFirst = true } = {}) {
 }
 
 async function boot() {
+  if (!assetId && filenameParam) {
+    try {
+      const cacheRes = await fetch(`/api/analysis-cache?filename=${encodeURIComponent(filenameParam)}`);
+      if (cacheRes.ok) {
+        const cacheData = await cacheRes.json();
+        assetId = cacheData.asset_id;
+        const next = new URL(window.location.href);
+        next.searchParams.set("asset_id", assetId);
+        window.history.replaceState({}, "", next.toString());
+      }
+    } catch (_err) {
+      // Continue to normal missing-id handling below.
+    }
+  }
+
   if (!assetId) {
     summaryBox.textContent = "Missing asset_id in URL.";
     return;

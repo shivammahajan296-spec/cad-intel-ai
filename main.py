@@ -14,7 +14,7 @@ from urllib import error, request
 from urllib.parse import urlparse
 
 import ezdxf
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -88,6 +88,35 @@ def _load_config() -> dict[str, Any]:
 
 def _save_config(data: dict[str, Any]) -> None:
     CONFIG_DB.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _filename_cache_key(filename: str) -> str:
+    return _sanitize(filename).lower()
+
+
+def _get_analysis_cache(config: dict[str, Any]) -> dict[str, str]:
+    cache = config.get("analysis_cache")
+    if not isinstance(cache, dict):
+        return {}
+    cleaned: dict[str, str] = {}
+    for key, value in cache.items():
+        if isinstance(key, str) and isinstance(value, str):
+            cleaned[key] = value
+    return cleaned
+
+
+def _set_cached_asset(filename: str, asset_id: str) -> None:
+    config = _load_config()
+    cache = _get_analysis_cache(config)
+    cache[_filename_cache_key(filename)] = asset_id
+    config["analysis_cache"] = cache
+    _save_config(config)
+
+
+def _get_cached_asset_id(filename: str) -> str | None:
+    config = _load_config()
+    cache = _get_analysis_cache(config)
+    return cache.get(_filename_cache_key(filename))
 
 
 def _is_valid_http_url(url: str) -> bool:
@@ -579,8 +608,19 @@ async def upload_asset(file: UploadFile = File(...)) -> dict[str, Any]:
     if ext not in {".dxf", ".step", ".stp", ".glb", ".gltf", ".stl"}:
         raise HTTPException(status_code=400, detail="Unsupported file type")
 
-    asset_id = uuid.uuid4().hex
     safe_name = _sanitize(file.filename or f"asset{ext}")
+    cached_asset_id = _get_cached_asset_id(safe_name)
+    if cached_asset_id:
+        assets = _load_assets()
+        if cached_asset_id in assets:
+            logger.info("upload.cache_hit filename=%s asset_id=%s", safe_name, cached_asset_id)
+            return {
+                "asset_id": cached_asset_id,
+                "analysis_url": f"/analysis.html?asset_id={cached_asset_id}",
+                "cached": True,
+            }
+
+    asset_id = uuid.uuid4().hex
     stored_name = f"{asset_id}_{safe_name}"
     target = UPLOAD_DIR / stored_name
     content = await file.read()
@@ -621,8 +661,9 @@ async def upload_asset(file: UploadFile = File(...)) -> dict[str, Any]:
         "summary": "",
     }
     _save_assets(assets)
+    _set_cached_asset(safe_name, asset_id)
 
-    return {"asset_id": asset_id, "analysis_url": f"/analysis.html?asset_id={asset_id}"}
+    return {"asset_id": asset_id, "analysis_url": f"/analysis.html?asset_id={asset_id}", "cached": False}
 
 
 @app.get("/api/assets")
@@ -641,6 +682,10 @@ def clear_assets() -> dict[str, Any]:
     removed_generated = _clear_dir_contents(GENERATED_DIR, keep_names={ASSET_DB.name, CONFIG_DB.name})
     _clear_dir_contents(DB_DIR)
     DB_DIR.mkdir(parents=True, exist_ok=True)
+    config = _load_config()
+    if "analysis_cache" in config:
+        config["analysis_cache"] = {}
+        _save_config(config)
 
     return {
         "status": "cleared",
@@ -648,6 +693,17 @@ def clear_assets() -> dict[str, Any]:
         "removed_uploads": removed_uploads,
         "removed_generated": removed_generated,
     }
+
+
+@app.get("/api/analysis-cache")
+def resolve_analysis_cache(filename: str = Query(...)) -> dict[str, Any]:
+    cached_asset_id = _get_cached_asset_id(filename)
+    if not cached_asset_id:
+        raise HTTPException(status_code=404, detail="No cached analysis for filename")
+    assets = _load_assets()
+    if cached_asset_id not in assets:
+        raise HTTPException(status_code=404, detail="Cached asset not found")
+    return {"asset_id": cached_asset_id, "analysis_url": f"/analysis.html?asset_id={cached_asset_id}"}
 
 
 @app.get("/api/assets/{asset_id}")

@@ -98,6 +98,9 @@ uploadBtn.addEventListener("click", async () => {
   }
 
   const data = await res.json();
+  if (data.cached) {
+    statusEl.textContent = "Using cached analysis for this filename...";
+  }
   window.location.href = data.analysis_url;
 });
 

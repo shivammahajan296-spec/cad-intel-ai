@@ -17,12 +17,13 @@ function card(asset) {
   const thumbMarkup = thumb
     ? `<img class="thumb" src="${thumb}" alt="Front view thumbnail" />`
     : `<div class="thumb thumb-empty">Preview pending</div>`;
+  const analysisHref = `/analysis.html?filename=${encodeURIComponent(asset.filename || "")}`;
   return `
     <article class="asset-card">
       ${thumbMarkup}
       <h4>${asset.filename}</h4>
       <p class="subtle">${snippet}</p>
-      <a class="cta" href="/analysis.html?asset_id=${asset.asset_id}">Open Analysis</a>
+      <a class="cta" href="${analysisHref}">Open Analysis</a>
     </article>
   `;
 }
@@ -63,7 +64,8 @@ function showSearch(items) {
       const label = item.metadata?.filename || item.asset_id;
       const score = item.distance != null ? `score ${Number(item.distance).toFixed(3)}` : "score n/a";
       const snippet = (item.document || "Matched based on indexed content.").slice(0, 180);
-      return `<div class="result-card"><strong>${label}</strong><p>${snippet}</p><a href="/analysis.html?asset_id=${item.asset_id}">Open analysis</a> <span class="subtle">(${score})</span></div>`;
+      const href = label ? `/analysis.html?filename=${encodeURIComponent(label)}` : `/analysis.html?asset_id=${item.asset_id}`;
+      return `<div class="result-card"><strong>${label}</strong><p>${snippet}</p><a href="${href}">Open analysis</a> <span class="subtle">(${score})</span></div>`;
     })
     .join("");
 }

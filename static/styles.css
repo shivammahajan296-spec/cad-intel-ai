@@ -230,17 +230,54 @@ button:hover,
   grid-template-columns: 1fr;
 }
 
+.summary-intro {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-left: 3px solid #e6a260;
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 8px;
+}
+
+.summary-intro p {
+  margin: 0;
+  color: #3f4048;
+}
+
 .summary-card {
-  border: none;
-  border-radius: 0;
-  padding: 0;
-  background: transparent;
-  box-shadow: none;
+  border: 1px solid #e3e4e8;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  box-shadow: 0 4px 10px rgba(28, 30, 36, 0.04);
+}
+
+.summary-card-pillar {
+  border-left: 4px solid #ef7f1a;
+  position: relative;
+  padding-left: 44px;
+}
+
+.summary-card-pillar::before {
+  content: attr(data-pillar);
+  position: absolute;
+  left: 10px;
+  top: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff1e3;
+  color: #a55a10;
+  border: 1px solid #f2c593;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.74rem;
+  font-weight: 800;
 }
 
 .summary-card h4 {
-  margin: 8px 0 4px;
-  font-size: 1rem;
+  margin: 2px 0 6px;
+  font-size: 1.02rem;
   color: #2f3036;
 }
 
