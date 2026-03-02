@@ -65,15 +65,16 @@ body {
 }
 
 .logo-slot {
-  width: 172px;
-  height: 60px;
-  border: 1px solid #e4e4e8;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 2px 8px rgba(34, 34, 34, 0.05);
+  width: 220px;
+  height: 76px;
   object-fit: contain;
   object-position: center;
-  padding: 4px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  display: block;
 }
 
 .mini-btn {
