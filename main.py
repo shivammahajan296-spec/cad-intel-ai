@@ -41,6 +41,7 @@ CONFIG_DB = GENERATED_DIR / "config.json"
 DEFAULT_STRAIVE_SUMMARY_URL = "https://llmfoundry.straive.com/gemini/v1beta/openai/chat/completions"
 DEFAULT_STRAIVE_MODEL = "gemini-3-pro-preview"
 LOG_LEVEL = os.getenv("APP_LOG_LEVEL", "INFO").upper()
+DEFAULT_STRAIVE_TIMEOUT_SECONDS = 120
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 GENERATED_DIR.mkdir(parents=True, exist_ok=True)
@@ -262,6 +263,10 @@ def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
             logger.warning("summary.config.invalid_saved_url=%s", saved_url)
         straive_url = DEFAULT_STRAIVE_SUMMARY_URL
     straive_model = os.getenv("STRAIVE_MODEL", "").strip() or DEFAULT_STRAIVE_MODEL
+    try:
+        straive_timeout = int(os.getenv("STRAIVE_TIMEOUT_SECONDS", str(DEFAULT_STRAIVE_TIMEOUT_SECONDS)))
+    except ValueError:
+        straive_timeout = DEFAULT_STRAIVE_TIMEOUT_SECONDS
     api_key = os.getenv("STRAIVE_API_KEY", "").strip() or str(
         config.get("straive_api_key", "")
     ).strip()
@@ -287,7 +292,7 @@ def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
                 f"Extracted CAD text:\n{text[:12000]}"
             )
             content_parts: list[dict[str, Any]] = [{"type": "text", "text": merged_prompt}]
-            for image_ref in screenshots[:6]:
+            for image_ref in screenshots[:4]:
                 if not isinstance(image_ref, str):
                     continue
 
@@ -307,10 +312,11 @@ def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
                             }
                         )
             logger.info(
-                "summary.straive.request model=%s content_parts=%s image_parts=%s",
+                "summary.straive.request model=%s content_parts=%s image_parts=%s timeout=%ss",
                 straive_model,
                 len(content_parts),
                 max(len(content_parts) - 1, 0),
+                straive_timeout,
             )
 
             req_payload = {
@@ -329,9 +335,21 @@ def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
                 headers=headers,
                 data=json.dumps(req_payload).encode("utf-8"),
             )
-            with request.urlopen(req, timeout=18) as resp:
-                logger.info("summary.straive.http_status=%s", getattr(resp, "status", "unknown"))
-                body = resp.read().decode("utf-8", errors="ignore")
+            body = ""
+            for attempt in (1, 2):
+                try:
+                    with request.urlopen(req, timeout=straive_timeout) as resp:
+                        logger.info(
+                            "summary.straive.http_status=%s attempt=%s",
+                            getattr(resp, "status", "unknown"),
+                            attempt,
+                        )
+                        body = resp.read().decode("utf-8", errors="ignore")
+                    break
+                except TimeoutError:
+                    logger.warning("summary.straive.timeout attempt=%s timeout=%ss", attempt, straive_timeout)
+                    if attempt == 2:
+                        raise
             parsed = json.loads(body) if body else {}
 
             # OpenAI-compatible response parsing.
@@ -378,7 +396,15 @@ def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
                 "fallback",
                 f"straive_http_error_{exc.code}",
             )
-        except (error.URLError, TimeoutError, ValueError, json.JSONDecodeError):
+        except TimeoutError:
+            logger.exception("summary.straive.timeout_final")
+            return (
+                "Project Manager Summary: Straive request timed out. "
+                "Try again or increase STRAIVE_TIMEOUT_SECONDS.",
+                "fallback",
+                "straive_timeout",
+            )
+        except (error.URLError, ValueError, json.JSONDecodeError):
             logger.exception("summary.straive.request_failed")
             return (
                 "Project Manager Summary: Straive API request failed due to connectivity or payload parse issue.",
