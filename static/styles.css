@@ -84,8 +84,8 @@ body {
 }
 
 .ai-orb {
-  width: 52px;
-  height: 52px;
+  width: 46px;
+  height: 46px;
   border-radius: 999px;
   border: none;
   cursor: default;
@@ -99,6 +99,31 @@ body {
   transform-origin: center;
   transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
   flex: 0 0 auto;
+}
+
+.analysis-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 12px;
+  padding: 10px 14px;
+  box-shadow: 0 8px 18px rgba(221, 109, 6, 0.2);
+}
+
+.analysis-action-btn .btn-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 18px;
+}
+
+.analysis-action-btn .btn-icon svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  fill: currentColor;
 }
 
 .ai-orb::before {
