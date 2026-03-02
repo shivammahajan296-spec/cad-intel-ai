@@ -148,6 +148,22 @@ def _clear_dir_contents(path: Path, keep_names: set[str] | None = None) -> int:
     return removed
 
 
+def _remove_web_path(web_path: str | None, root: Path) -> bool:
+    if not web_path or not isinstance(web_path, str):
+        return False
+    name = Path(web_path).name
+    if not name:
+        return False
+    target = root / name
+    if not target.exists() or not target.is_file():
+        return False
+    try:
+        target.unlink()
+        return True
+    except FileNotFoundError:
+        return False
+
+
 def _default_extraction_engine() -> dict[str, Any]:
     return {
         "role": "You are a senior mechanical design engineer, CAD expert, and manufacturing specialist.",
@@ -830,6 +846,76 @@ async def upload_asset(file: UploadFile = File(...)) -> dict[str, Any]:
 def list_assets() -> dict[str, Any]:
     assets = _load_assets()
     return {"items": list(assets.values())}
+
+
+@app.delete("/api/assets/{asset_id}")
+def delete_asset(asset_id: str) -> dict[str, Any]:
+    assets = _load_assets()
+    asset = assets.get(asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    removed_uploads = 0
+    removed_generated = 0
+
+    if _remove_web_path(asset.get("dxf_path"), UPLOAD_DIR):
+        removed_uploads += 1
+    if _remove_web_path(asset.get("step_path"), UPLOAD_DIR):
+        removed_uploads += 1
+    if _remove_web_path(asset.get("glb"), UPLOAD_DIR):
+        removed_uploads += 1
+
+    for screenshot_path in asset.get("screenshots", []) or []:
+        if _remove_web_path(screenshot_path, GENERATED_DIR):
+            removed_generated += 1
+
+    # Extra safety: remove any files tied to this asset id prefix.
+    for path in UPLOAD_DIR.glob(f"{asset_id}_*"):
+        if path.is_file():
+            try:
+                path.unlink()
+                removed_uploads += 1
+            except FileNotFoundError:
+                continue
+    for path in GENERATED_DIR.glob(f"{asset_id}_*"):
+        if path.is_file():
+            try:
+                path.unlink()
+                removed_generated += 1
+            except FileNotFoundError:
+                continue
+
+    del assets[asset_id]
+    _save_assets(assets)
+
+    config = _load_config()
+    cache = _get_analysis_cache(config)
+    cache = {k: v for k, v in cache.items() if v != asset_id}
+    config["analysis_cache"] = cache
+    _save_config(config)
+
+    if chromadb:
+        try:
+            client = chromadb.PersistentClient(path=str(DB_DIR))
+            collection = client.get_or_create_collection(name="cad_assets")
+            collection.delete(ids=[asset_id])
+        except Exception:
+            logger.exception("asset.delete.vector_index_failed asset_id=%s", asset_id)
+
+    logger.info(
+        "asset.deleted asset_id=%s filename=%s removed_uploads=%s removed_generated=%s",
+        asset_id,
+        asset.get("filename", ""),
+        removed_uploads,
+        removed_generated,
+    )
+    return {
+        "status": "deleted",
+        "asset_id": asset_id,
+        "filename": asset.get("filename", ""),
+        "removed_uploads": removed_uploads,
+        "removed_generated": removed_generated,
+    }
 
 
 @app.post("/api/assets/clear")

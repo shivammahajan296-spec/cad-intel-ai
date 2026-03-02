@@ -11,6 +11,15 @@ const clearLibraryStatus = document.getElementById("clearLibraryStatus");
 
 let assets = [];
 
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function card(asset) {
   const thumb = asset.screenshots?.[2] || asset.screenshots?.[0] || "";
   const snippet = asset.summary ? `${asset.summary.slice(0, 170)}...` : "Summary pending.";
@@ -20,8 +29,15 @@ function card(asset) {
   const analysisHref = `/analysis.html?filename=${encodeURIComponent(asset.filename || "")}`;
   return `
     <article class="asset-card">
+      <div class="asset-card-head">
+        <h4>${escapeHtml(asset.filename)}</h4>
+        <button class="asset-delete-btn" type="button" data-asset-delete="${asset.asset_id}" aria-label="Delete asset" title="Delete asset">
+          <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+            <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-2 6h2v9H7V9Zm4 0h2v9h-2V9Zm4 0h2v9h-2V9Z"/>
+          </svg>
+        </button>
+      </div>
       ${thumbMarkup}
-      <h4>${asset.filename}</h4>
       <p class="subtle">${snippet}</p>
       <a class="cta" href="${analysisHref}">Open Analysis</a>
     </article>
@@ -166,6 +182,23 @@ async function clearLibrary() {
   await loadLibrary();
 }
 
+async function deleteSingleAsset(assetId) {
+  const asset = assets.find((item) => item.asset_id === assetId);
+  const label = asset?.filename || "this asset";
+  const ok = window.confirm(`Are you sure you want to delete ${label}? This cannot be undone.`);
+  if (!ok) return;
+
+  clearLibraryStatus.textContent = "Deleting asset...";
+  const res = await fetch(`/api/assets/${encodeURIComponent(assetId)}`, { method: "DELETE" });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    clearLibraryStatus.textContent = data.detail || "Failed to delete asset.";
+    return;
+  }
+  clearLibraryStatus.textContent = "Asset deleted.";
+  await loadLibrary();
+}
+
 searchBtn.addEventListener("click", runSearch);
 searchInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
@@ -174,5 +207,12 @@ searchInput.addEventListener("keydown", (event) => {
 });
 compareBtn.addEventListener("click", runCompare);
 clearLibraryBtn.addEventListener("click", clearLibrary);
+grid.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const button = target.closest("button[data-asset-delete]");
+  if (!button) return;
+  deleteSingleAsset(button.dataset.assetDelete);
+});
 
 loadLibrary();
