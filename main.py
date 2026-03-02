@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib import error, request
+from urllib.parse import urlparse
 
 import ezdxf
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -86,6 +87,14 @@ def _load_config() -> dict[str, Any]:
 
 def _save_config(data: dict[str, Any]) -> None:
     CONFIG_DB.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _is_valid_http_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url.strip())
+        return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+    except Exception:
+        return False
 
 
 def _clear_dir_contents(path: Path, keep_names: set[str] | None = None) -> int:
@@ -242,11 +251,16 @@ def _index_asset(asset_id: str, filename: str, text_blob: str, summary: str) -> 
 def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
     prompt = payload.get("prompt", "")
     config = _load_config()
-    straive_url = (
-        os.getenv("STRAIVE_SUMMARY_URL", "").strip()
-        or str(config.get("straive_summary_url", "")).strip()
-        or DEFAULT_STRAIVE_SUMMARY_URL
-    )
+    env_url = os.getenv("STRAIVE_SUMMARY_URL", "").strip()
+    saved_url = str(config.get("straive_summary_url", "")).strip()
+    if _is_valid_http_url(env_url):
+        straive_url = env_url
+    elif _is_valid_http_url(saved_url):
+        straive_url = saved_url
+    else:
+        if saved_url and not _is_valid_http_url(saved_url):
+            logger.warning("summary.config.invalid_saved_url=%s", saved_url)
+        straive_url = DEFAULT_STRAIVE_SUMMARY_URL
     straive_model = os.getenv("STRAIVE_MODEL", "").strip() or DEFAULT_STRAIVE_MODEL
     api_key = os.getenv("STRAIVE_API_KEY", "").strip() or str(
         config.get("straive_api_key", "")
@@ -557,7 +571,12 @@ def get_straive_config() -> dict[str, str]:
     config = _load_config()
     env_url = os.getenv("STRAIVE_SUMMARY_URL", "").strip()
     saved_url = str(config.get("straive_summary_url", "")).strip()
-    effective_url = env_url or saved_url or DEFAULT_STRAIVE_SUMMARY_URL
+    if _is_valid_http_url(env_url):
+        effective_url = env_url
+    elif _is_valid_http_url(saved_url):
+        effective_url = saved_url
+    else:
+        effective_url = DEFAULT_STRAIVE_SUMMARY_URL
     env_key = os.getenv("STRAIVE_API_KEY", "").strip()
     saved_key = str(config.get("straive_api_key", "")).strip()
     return {
