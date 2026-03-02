@@ -1,6 +1,7 @@
 import base64
 import json
 import math
+import mimetypes
 import os
 import re
 import shutil
@@ -256,9 +257,25 @@ def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
                 f"Extracted CAD text:\n{text[:12000]}"
             )
             content_parts: list[dict[str, Any]] = [{"type": "text", "text": merged_prompt}]
-            for image_uri in screenshots[:6]:
-                if isinstance(image_uri, str) and image_uri.startswith("data:image"):
-                    content_parts.append({"type": "image_url", "image_url": {"url": image_uri}})
+            for image_ref in screenshots[:6]:
+                if not isinstance(image_ref, str):
+                    continue
+
+                if image_ref.startswith("data:image"):
+                    content_parts.append({"type": "image_url", "image_url": {"url": image_ref}})
+                    continue
+
+                if image_ref.startswith("/generated/"):
+                    local_path = BASE_DIR / image_ref.lstrip("/")
+                    if local_path.exists():
+                        mime = mimetypes.guess_type(local_path.name)[0] or "image/png"
+                        img_b64 = base64.b64encode(local_path.read_bytes()).decode("utf-8")
+                        content_parts.append(
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:{mime};base64,{img_b64}"},
+                            }
+                        )
 
             req_payload = {
                 "model": straive_model,
@@ -267,9 +284,7 @@ def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
             }
             headers = {
                 "Content-Type": "application/json",
-                "Accept": "application/json",
                 "Authorization": f"Bearer {api_key}",
-                "x-api-key": api_key,
             }
 
             req = request.Request(
