@@ -615,6 +615,7 @@ async def upload_asset(file: UploadFile = File(...)) -> dict[str, Any]:
         "hierarchy": record.get("hierarchy", []),
         "preview_lines": record.get("preview_lines", []),
         "glb": record.get("glb"),
+        "dxf_path": f"/uploads/{stored_name}" if ext == ".dxf" else None,
         "step_path": record.get("step_path"),
         "screenshots": [],
         "summary": "",
@@ -669,6 +670,11 @@ def get_asset(asset_id: str) -> dict[str, Any]:
                 changed = True
             except Exception:
                 pass
+    if asset.get("source_type") == "dxf" and not asset.get("dxf_path"):
+        candidate = UPLOAD_DIR / f"{asset_id}_{_sanitize(asset.get('filename', ''))}"
+        if candidate.exists():
+            asset["dxf_path"] = f"/uploads/{candidate.name}"
+            changed = True
 
     if asset.get("source_type") == "step" and not asset.get("step_path"):
         candidate = UPLOAD_DIR / f"{asset_id}_{_sanitize(asset.get('filename', ''))}"

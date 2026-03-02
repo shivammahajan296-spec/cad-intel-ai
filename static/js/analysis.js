@@ -26,6 +26,17 @@ let stepRenderer = null;
 let stepControls = null;
 let stepModel = null;
 
+let dxfCanvas = null;
+let dxfCtx = null;
+let dxfDoc = null;
+let dxfBounds = null;
+let dxfScale = 1;
+let dxfOffsetX = 0;
+let dxfOffsetY = 0;
+let dxfDragging = false;
+let dxfLastX = 0;
+let dxfLastY = 0;
+
 function renderDynamicSummary(summaryText) {
   if (!summaryText || !summaryText.trim()) {
     summaryBox.textContent = "No summary generated.";
@@ -96,6 +107,196 @@ function setMetaRows(a) {
     ["Created", String(a.metadata?.created_date || "Unknown")],
   ];
   metaRows.innerHTML = entries.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
+}
+
+function dxfWorldToScreen(x, y) {
+  return { x: x * dxfScale + dxfOffsetX, y: -y * dxfScale + dxfOffsetY };
+}
+
+function dxfResetView() {
+  dxfScale = 1;
+  dxfOffsetX = 40;
+  dxfOffsetY = 40;
+}
+
+function dxfComputeBounds(entities) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  const upd = (x, y) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  };
+
+  for (const e of entities || []) {
+    if (!e) continue;
+    if (e.type === "LINE" && e.vertices?.length >= 2) {
+      upd(e.vertices[0].x, e.vertices[0].y);
+      upd(e.vertices[1].x, e.vertices[1].y);
+    } else if ((e.type === "LWPOLYLINE" || e.type === "POLYLINE") && e.vertices?.length) {
+      for (const v of e.vertices) upd(v.x, v.y);
+    } else if (e.type === "CIRCLE" && e.center) {
+      upd(e.center.x - e.radius, e.center.y - e.radius);
+      upd(e.center.x + e.radius, e.center.y + e.radius);
+    } else if (e.type === "ARC" && e.center) {
+      upd(e.center.x - e.radius, e.center.y - e.radius);
+      upd(e.center.x + e.radius, e.center.y + e.radius);
+    } else if (e.type === "TEXT" && e.startPoint) {
+      upd(e.startPoint.x, e.startPoint.y);
+    } else if (e.type === "MTEXT" && e.position) {
+      upd(e.position.x, e.position.y);
+    }
+  }
+  if (!Number.isFinite(minX)) return null;
+  return { minX, minY, maxX, maxY };
+}
+
+function dxfFitToView() {
+  if (!dxfBounds || !dxfCanvas) return;
+  const w = dxfCanvas.width;
+  const h = dxfCanvas.height;
+  const bw = dxfBounds.maxX - dxfBounds.minX || 1;
+  const bh = dxfBounds.maxY - dxfBounds.minY || 1;
+  dxfScale = Math.min(w / bw, h / bh) * 0.92;
+  const cx = (dxfBounds.minX + dxfBounds.maxX) / 2;
+  const cy = (dxfBounds.minY + dxfBounds.maxY) / 2;
+  dxfOffsetX = w / 2 - cx * dxfScale;
+  dxfOffsetY = h / 2 - -cy * dxfScale;
+}
+
+function dxfDrawEntity(e) {
+  if (!dxfCtx) return;
+  if (e.type === "LINE" && e.vertices?.length >= 2) {
+    const a = dxfWorldToScreen(e.vertices[0].x, e.vertices[0].y);
+    const b = dxfWorldToScreen(e.vertices[1].x, e.vertices[1].y);
+    dxfCtx.beginPath();
+    dxfCtx.moveTo(a.x, a.y);
+    dxfCtx.lineTo(b.x, b.y);
+    dxfCtx.stroke();
+  } else if ((e.type === "LWPOLYLINE" || e.type === "POLYLINE") && e.vertices?.length) {
+    const p0 = dxfWorldToScreen(e.vertices[0].x, e.vertices[0].y);
+    dxfCtx.beginPath();
+    dxfCtx.moveTo(p0.x, p0.y);
+    for (let i = 1; i < e.vertices.length; i += 1) {
+      const p = dxfWorldToScreen(e.vertices[i].x, e.vertices[i].y);
+      dxfCtx.lineTo(p.x, p.y);
+    }
+    if (e.closed) dxfCtx.closePath();
+    dxfCtx.stroke();
+  } else if (e.type === "CIRCLE" && e.center) {
+    const c = dxfWorldToScreen(e.center.x, e.center.y);
+    dxfCtx.beginPath();
+    dxfCtx.arc(c.x, c.y, Math.abs(e.radius * dxfScale), 0, Math.PI * 2);
+    dxfCtx.stroke();
+  } else if (e.type === "ARC" && e.center) {
+    const c = dxfWorldToScreen(e.center.x, e.center.y);
+    const start = -(Number(e.startAngle || 0) * Math.PI) / 180;
+    const end = -(Number(e.endAngle || 0) * Math.PI) / 180;
+    dxfCtx.beginPath();
+    dxfCtx.arc(c.x, c.y, Math.abs(e.radius * dxfScale), start, end, false);
+    dxfCtx.stroke();
+  }
+}
+
+function dxfRender() {
+  if (!dxfCanvas || !dxfCtx) return;
+  const w = dxfCanvas.width;
+  const h = dxfCanvas.height;
+  dxfCtx.clearRect(0, 0, w, h);
+  dxfCtx.strokeStyle = "#e6ebff";
+  dxfCtx.lineWidth = 1;
+  for (const e of dxfDoc?.entities || []) {
+    dxfDrawEntity(e);
+  }
+}
+
+function initDxfViewer() {
+  viewerMode = "dxf";
+  previewReady = false;
+  container.innerHTML = "";
+  dxfCanvas = document.createElement("canvas");
+  dxfCanvas.style.width = "100%";
+  dxfCanvas.style.height = "100%";
+  dxfCanvas.style.display = "block";
+  container.appendChild(dxfCanvas);
+  dxfCtx = dxfCanvas.getContext("2d");
+
+  const resize = () => {
+    if (!dxfCanvas) return;
+    dxfCanvas.width = Math.max(1, container.clientWidth || 1);
+    dxfCanvas.height = Math.max(1, container.clientHeight || 1);
+    dxfRender();
+  };
+  window.addEventListener("resize", resize);
+  resize();
+
+  dxfCanvas.addEventListener("mousedown", (ev) => {
+    dxfDragging = true;
+    dxfLastX = ev.clientX;
+    dxfLastY = ev.clientY;
+  });
+  window.addEventListener("mouseup", () => {
+    dxfDragging = false;
+  });
+  window.addEventListener("mousemove", (ev) => {
+    if (!dxfDragging) return;
+    const dx = ev.clientX - dxfLastX;
+    const dy = ev.clientY - dxfLastY;
+    dxfLastX = ev.clientX;
+    dxfLastY = ev.clientY;
+    dxfOffsetX += dx;
+    dxfOffsetY += dy;
+    dxfRender();
+  });
+  dxfCanvas.addEventListener(
+    "wheel",
+    (ev) => {
+      ev.preventDefault();
+      const rect = dxfCanvas.getBoundingClientRect();
+      const mx = ev.clientX - rect.left;
+      const my = ev.clientY - rect.top;
+      const zoom = Math.exp(-ev.deltaY * 0.001);
+      const newScale = Math.max(0.02, Math.min(800, dxfScale * zoom));
+      const wx = (mx - dxfOffsetX) / dxfScale;
+      const wy = -((my - dxfOffsetY) / dxfScale);
+      dxfScale = newScale;
+      dxfOffsetX = mx - wx * dxfScale;
+      dxfOffsetY = my - -wy * dxfScale;
+      dxfRender();
+    },
+    { passive: false },
+  );
+}
+
+async function loadDxfFromUrl(url) {
+  if (!window.DxfParser) {
+    showPreviewError("DXF parser runtime unavailable.");
+    return;
+  }
+  if (!url) {
+    showPreviewError("No DXF URL provided.");
+    return;
+  }
+  try {
+    summaryBox.textContent = "Loading DXF file...";
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Failed to fetch DXF file.");
+    const text = await res.text();
+    const parser = new window.DxfParser();
+    dxfDoc = parser.parseSync(text);
+    dxfBounds = dxfComputeBounds(dxfDoc.entities || []);
+    dxfResetView();
+    if (dxfBounds) dxfFitToView();
+    dxfRender();
+    previewReady = true;
+    summaryBox.textContent = `DXF file loaded (${dxfDoc.entities?.length || 0} entities).`;
+  } catch (err) {
+    showPreviewError(`DXF load failed: ${err.message}`);
+  }
 }
 
 function initViewer() {
@@ -391,6 +592,13 @@ async function captureViews() {
       stepRenderer.render(stepScene, stepCamera);
       captures.push(stepRenderer.domElement.toDataURL("image/png"));
     }
+  } else if (viewerMode === "dxf") {
+    if (!dxfCanvas) {
+      throw new Error("DXF canvas not ready.");
+    }
+    // DXF summary uses a single snapshot (current fitted/panned view).
+    dxfRender();
+    captures.push(dxfCanvas.toDataURL("image/png"));
   } else {
   for (const pos of cameraPositions) {
     camera.position.set(pos[0], pos[1], pos[2]);
@@ -485,16 +693,14 @@ async function boot() {
     initStepScene();
     animateStep();
     await loadStepFromUrl(asset.step_path);
+  } else if (asset.source_type === "dxf") {
+    initDxfViewer();
+    await loadDxfFromUrl(asset.dxf_path);
   } else if (asset.glb) {
     viewerMode = "module";
     initViewer();
     animate();
     loadModel(asset.glb);
-  } else if (asset.source_type === "dxf") {
-    viewerMode = "module";
-    initViewer();
-    animate();
-    renderDxfLines(asset.preview_lines || []);
   } else {
     viewerMode = "module";
     initViewer();
