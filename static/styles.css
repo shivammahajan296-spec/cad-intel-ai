@@ -216,8 +216,113 @@ button:hover,
   border: 1px solid #ebb586;
   border-radius: 10px;
   background: linear-gradient(180deg, rgba(239, 127, 26, 0.1) 0, rgba(239, 127, 26, 0.04) 100%);
-  padding: 12px;
-  line-height: 1.45;
+  padding: 16px;
+  line-height: 1.6;
+  font-size: 1rem;
+  box-shadow: 0 8px 18px rgba(40, 41, 48, 0.06);
+}
+
+.summary-meta {
+  font-size: 0.86rem;
+  margin-bottom: 10px;
+}
+
+.summary-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.summary-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  border: 1px solid transparent;
+}
+
+.summary-badge.tone-high {
+  background: #ffe7e2;
+  color: #9c2f1b;
+  border-color: #ffc5bb;
+}
+
+.summary-badge.tone-medium {
+  background: #fff1dc;
+  color: #8f5a11;
+  border-color: #f2d09c;
+}
+
+.summary-badge.tone-low,
+.summary-badge.tone-good {
+  background: #e9f8ef;
+  color: #1d6b3d;
+  border-color: #bde7ca;
+}
+
+.summary-badge.tone-info {
+  background: #eaf2fe;
+  color: #1d4e9d;
+  border-color: #c2d9fb;
+}
+
+.summary-badge.tone-neutral {
+  background: #f0f1f4;
+  color: #4b4f57;
+  border-color: #d6d8de;
+}
+
+.summary-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.summary-card {
+  border: 1px solid #e3e4e8;
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: #fff;
+  box-shadow: 0 6px 14px rgba(36, 37, 45, 0.04);
+}
+
+.summary-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.summary-card-head h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.summary-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: #ffe6cd;
+  color: #9f5307;
+  font-size: 0.67rem;
+  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #f0c18f;
+}
+
+.summary-card ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.summary-card li {
+  margin: 4px 0;
+  color: #3f4048;
+  line-height: 1.5;
 }
 
 .tool-grid {

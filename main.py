@@ -41,7 +41,7 @@ CONFIG_DB = GENERATED_DIR / "config.json"
 DEFAULT_STRAIVE_SUMMARY_URL = "https://llmfoundry.straive.com/gemini/v1beta/openai/chat/completions"
 DEFAULT_STRAIVE_MODEL = "gemini-3-pro-preview"
 LOG_LEVEL = os.getenv("APP_LOG_LEVEL", "INFO").upper()
-DEFAULT_STRAIVE_TIMEOUT_SECONDS = 120
+DEFAULT_STRAIVE_TIMEOUT_SECONDS = 180
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 GENERATED_DIR.mkdir(parents=True, exist_ok=True)
@@ -247,6 +247,96 @@ def _index_asset(asset_id: str, filename: str, text_blob: str, summary: str) -> 
         documents=[f"{filename}\n{text_blob}\n{summary}"],
         metadatas=[{"filename": filename}],
     )
+
+
+def _structured_summary_from_text(
+    summary: str,
+    source_type: str,
+    metadata: dict[str, Any],
+    raw_text: str,
+    screenshots_count: int,
+) -> dict[str, Any]:
+    blob = f"{summary}\n{raw_text}".lower()
+
+    complexity = "Medium Complexity"
+    complexity_tone = "medium"
+    if "high-complexity" in blob or "high complexity" in blob:
+        complexity = "High Complexity"
+        complexity_tone = "high"
+    elif "low-complexity" in blob or "low complexity" in blob:
+        complexity = "Low Complexity"
+        complexity_tone = "low"
+
+    material = "Material Unconfirmed"
+    material_tone = "neutral"
+    if "aluminum" in blob:
+        material = "Aluminum"
+        material_tone = "info"
+    elif "steel" in blob:
+        material = "Steel"
+        material_tone = "info"
+    elif "stainless" in blob:
+        material = "Stainless Steel"
+        material_tone = "info"
+    elif "abs" in blob:
+        material = "ABS"
+        material_tone = "info"
+    elif "polycarbonate" in blob:
+        material = "Polycarbonate"
+        material_tone = "info"
+
+    manufacturing = "General Machined/Assembled"
+    manufacturing_tone = "neutral"
+    if "injection" in blob and "mold" in blob:
+        manufacturing = "Injection Molded"
+        manufacturing_tone = "good"
+    elif "sheet metal" in blob:
+        manufacturing = "Sheet Metal"
+        manufacturing_tone = "good"
+    elif "cast" in blob:
+        manufacturing = "Casting"
+        manufacturing_tone = "good"
+    elif "cnc" in blob or "machin" in blob:
+        manufacturing = "CNC Machined"
+        manufacturing_tone = "good"
+
+    part_identification = [
+        f"File type: {source_type.upper()}",
+        f"Author: {metadata.get('author', 'Unknown')}",
+        f"Revision/Version: {metadata.get('version', 'Unknown')}",
+    ]
+    materials = [
+        f"Detected material signal: {material}",
+        "Validate against BOM/title block for production sign-off.",
+    ]
+    manufacturing_notes = [
+        f"Likely manufacturing route: {manufacturing}",
+        f"Available geometric views captured: {screenshots_count}",
+    ]
+    complexity_notes = [
+        f"Overall complexity assessment: {complexity}",
+        "Use assembly hierarchy and annotation density to prioritize review depth.",
+    ]
+    recommendation = [
+        "Confirm part numbers and revision lineage before release.",
+        "Run DFM checks after BOM/material validation.",
+        "Escalate unclear tolerances or missing annotations to CAD owner.",
+    ]
+
+    return {
+        "badges": [
+            {"label": complexity, "tone": complexity_tone},
+            {"label": material, "tone": material_tone},
+            {"label": manufacturing, "tone": manufacturing_tone},
+        ],
+        "sections": {
+            "part_identification": part_identification,
+            "materials": materials,
+            "manufacturing": manufacturing_notes,
+            "complexity": complexity_notes,
+            "recommendation": recommendation,
+        },
+    }
 
 
 def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
@@ -586,6 +676,16 @@ def get_asset(asset_id: str) -> dict[str, Any]:
             asset["step_path"] = f"/uploads/{candidate.name}"
             changed = True
 
+    if asset.get("summary") and not asset.get("summary_structured"):
+        asset["summary_structured"] = _structured_summary_from_text(
+            summary=asset.get("summary", ""),
+            source_type=asset.get("source_type", "unknown"),
+            metadata=asset.get("metadata", {}),
+            raw_text="\n".join(asset.get("texts", [])),
+            screenshots_count=len(asset.get("screenshots", [])),
+        )
+        changed = True
+
     if changed:
         assets[asset_id] = asset
         _save_assets(assets)
@@ -670,6 +770,13 @@ def summarize(payload: SummarizeRequest) -> dict[str, Any]:
     asset["summary"] = summary
     asset["summary_source"] = summary_source
     asset["summary_reason"] = summary_reason
+    asset["summary_structured"] = _structured_summary_from_text(
+        summary=summary,
+        source_type=payload.source_type,
+        metadata=asset.get("metadata", {}),
+        raw_text=payload.text or "",
+        screenshots_count=len(payload.screenshots or []),
+    )
     assets[payload.asset_id] = asset
     _save_assets(assets)
 
@@ -689,6 +796,7 @@ def summarize(payload: SummarizeRequest) -> dict[str, Any]:
         "summary_source": summary_source,
         "summary_reason": summary_reason,
         "screenshots_count": len(payload.screenshots or []),
+        "summary_structured": asset["summary_structured"],
     }
 
 

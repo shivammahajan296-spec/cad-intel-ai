@@ -26,6 +26,47 @@ let stepRenderer = null;
 let stepControls = null;
 let stepModel = null;
 
+function renderStructuredSummary(structured, source = "", reason = "", screenshots = 0) {
+  if (!structured || !structured.sections) {
+    summaryBox.textContent = "Summary format unavailable.";
+    return;
+  }
+
+  const badges = (structured.badges || [])
+    .map((b) => `<span class="summary-badge tone-${b.tone || "neutral"}">${b.label}</span>`)
+    .join("");
+
+  const sections = [
+    { key: "part_identification", title: "Part Identification", icon: "PI" },
+    { key: "materials", title: "Materials", icon: "MT" },
+    { key: "manufacturing", title: "Manufacturing", icon: "MF" },
+    { key: "complexity", title: "Complexity", icon: "CX" },
+    { key: "recommendation", title: "Recommendation", icon: "RC" },
+  ];
+
+  const cards = sections
+    .map((section) => {
+      const items = structured.sections?.[section.key] || [];
+      const list = items.map((item) => `<li>${item}</li>`).join("");
+      return `
+        <article class="summary-card">
+          <div class="summary-card-head">
+            <span class="summary-icon">${section.icon}</span>
+            <h4>${section.title}</h4>
+          </div>
+          <ul>${list}</ul>
+        </article>
+      `;
+    })
+    .join("");
+
+  summaryBox.innerHTML = `
+    <div class="summary-meta subtle">Source: ${source || "unknown"}${reason ? ` (${reason})` : ""} | Screenshots: ${screenshots}</div>
+    <div class="summary-badges">${badges}</div>
+    <div class="summary-grid">${cards}</div>
+  `;
+}
+
 function setMetaRows(a) {
   const entries = [
     ["File", a.filename],
@@ -397,10 +438,12 @@ async function runSummaryPipeline({ captureFirst = true } = {}) {
 
     const data = await res.json();
     console.log("[analysis] summarize.done", data);
-    const source = data.summary_source || "unknown";
-    const reason = data.summary_reason ? ` (${data.summary_reason})` : "";
-    const shots = Number(data.screenshots_count || 0);
-    summaryBox.textContent = `${data.summary || "No summary generated."}\n\nSource: ${source}${reason}. Screenshots sent: ${shots}.`;
+    renderStructuredSummary(
+      data.summary_structured,
+      data.summary_source || "unknown",
+      data.summary_reason || "",
+      Number(data.screenshots_count || 0),
+    );
   } catch (err) {
     console.error("[analysis] summaryPipeline.error", err);
     summaryBox.textContent = `Analysis failed: ${err.message}`;
@@ -445,7 +488,12 @@ async function boot() {
   }
 
   if (asset.summary) {
-    summaryBox.textContent = asset.summary;
+    renderStructuredSummary(
+      asset.summary_structured,
+      asset.summary_source || "stored",
+      asset.summary_reason || "",
+      (asset.screenshots || []).length,
+    );
   } else if (asset.source_type === "step" && previewReady) {
     await runSummaryPipeline({ captureFirst: true });
   }
