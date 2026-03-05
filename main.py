@@ -768,7 +768,75 @@ def _generate_summary(payload: dict[str, Any]) -> tuple[str, str, str]:
     )
 
 
-def _generate_compare_report(payload: dict[str, Any]) -> tuple[str, str, str]:
+def _extract_json_object_from_text(text: str) -> dict[str, Any] | None:
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-zA-Z0-9]*\n?", "", raw).rstrip("`").strip()
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    try:
+        parsed = json.loads(raw[start : end + 1])
+        return parsed if isinstance(parsed, dict) else None
+    except Exception:
+        return None
+
+
+def _normalize_compare_structured(data: dict[str, Any]) -> dict[str, Any]:
+    def _as_list(value: Any) -> list[str]:
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        if isinstance(value, str) and value.strip():
+            return [line.strip("-• ").strip() for line in value.splitlines() if line.strip()]
+        return []
+
+    try:
+        score = int(round(float(data.get("similarity_score_pct", 0))))
+    except Exception:
+        score = 0
+    score = max(0, min(100, score))
+
+    structured = {
+        "similarity_score_pct": score,
+        "similarity_reason": str(data.get("similarity_reason", "")).strip(),
+        "dimension_key_differences": _as_list(data.get("dimension_key_differences")),
+        "key_differentiators_overall": _as_list(data.get("key_differentiators_overall")),
+        "manufacturing_impact_comparison": _as_list(data.get("manufacturing_impact_comparison")),
+        "complexity_risk_comparison": _as_list(data.get("complexity_risk_comparison")),
+        "recommendation": _as_list(data.get("recommendation")),
+    }
+    return structured
+
+
+def _compare_structured_to_markdown(structured: dict[str, Any]) -> str:
+    lines: list[str] = [
+        "Similarity",
+        f"- Score: {structured.get('similarity_score_pct', 0)}%",
+        f"- Reason: {structured.get('similarity_reason', 'N/A')}",
+        "",
+        "Dimension-wise Key Differences",
+    ]
+    for item in structured.get("dimension_key_differences", []):
+        lines.append(f"- {item}")
+    lines.extend(["", "Key Differentiators Overall"])
+    for item in structured.get("key_differentiators_overall", []):
+        lines.append(f"- {item}")
+    lines.extend(["", "Manufacturing Impact Comparison"])
+    for item in structured.get("manufacturing_impact_comparison", []):
+        lines.append(f"- {item}")
+    lines.extend(["", "Complexity/Risk Comparison"])
+    for item in structured.get("complexity_risk_comparison", []):
+        lines.append(f"- {item}")
+    lines.extend(["", "Recommendation"])
+    for item in structured.get("recommendation", []):
+        lines.append(f"- {item}")
+    return "\n".join(lines).strip()
+
+
+def _generate_compare_report(payload: dict[str, Any]) -> tuple[dict[str, Any], str, str, str]:
     config = _load_config()
     env_url = os.getenv("STRAIVE_SUMMARY_URL", "").strip()
     saved_url = str(config.get("straive_summary_url", "")).strip()
@@ -789,14 +857,26 @@ def _generate_compare_report(payload: dict[str, Any]) -> tuple[str, str, str]:
     summary_a = str(payload.get("summary_a", "") or "")[:3500]
     summary_b = str(payload.get("summary_b", "") or "")[:3500]
 
-    prompt = (
-        "You are a senior CAD engineering reviewer. Compare Asset A vs Asset B and return:\n"
-        "1) Key differentiators (5-8 bullets)\n"
-        "2) Manufacturing impact comparison\n"
-        "3) Complexity/risk comparison\n"
-        "4) Recommendation: which asset needs higher review priority and why\n"
-        "Keep output concise, technical, and evidence-based."
-    )
+    prompt = """
+You are a senior CAD engineering reviewer.
+Compare Asset A and Asset B only from their generated analysis text.
+
+Return STRICT JSON with this schema:
+{
+  "similarity_score_pct": 80,
+  "similarity_reason": "why they are this similar",
+  "dimension_key_differences": ["5-6 concise bullets"],
+  "key_differentiators_overall": ["5-8 concise bullets"],
+  "manufacturing_impact_comparison": ["3-6 concise bullets"],
+  "complexity_risk_comparison": ["3-6 concise bullets"],
+  "recommendation": ["which asset needs higher review priority and why"]
+}
+
+Rules:
+- similarity_score_pct must be integer 0-100.
+- No markdown, no extra keys, JSON only.
+- Be concise and technical.
+""".strip()
 
     compare_context = (
         "Asset A analysis:\n"
@@ -835,7 +915,10 @@ def _generate_compare_report(payload: dict[str, Any]) -> tuple[str, str, str]:
                 message = choices[0].get("message", {}) if isinstance(choices[0], dict) else {}
                 content = message.get("content")
                 if isinstance(content, str) and content.strip():
-                    return content.strip(), "straive", ""
+                    json_obj = _extract_json_object_from_text(content)
+                    if json_obj:
+                        structured = _normalize_compare_structured(json_obj)
+                        return structured, "straive", "", _compare_structured_to_markdown(structured)
                 if isinstance(content, list):
                     text_parts = []
                     for part in content:
@@ -844,43 +927,104 @@ def _generate_compare_report(payload: dict[str, Any]) -> tuple[str, str, str]:
                             if text:
                                 text_parts.append(text)
                     if text_parts:
-                        return "\n".join(text_parts).strip(), "straive", ""
-            return (
-                "Comparison report unavailable: invalid Straive response shape.",
-                "fallback",
-                "invalid_straive_compare_response",
+                        merged = "\n".join(text_parts).strip()
+                        json_obj = _extract_json_object_from_text(merged)
+                        if json_obj:
+                            structured = _normalize_compare_structured(json_obj)
+                            return structured, "straive", "", _compare_structured_to_markdown(structured)
+            fallback = _normalize_compare_structured(
+                {
+                    "similarity_score_pct": 0,
+                    "similarity_reason": "Comparison report unavailable due to invalid Straive response shape.",
+                    "dimension_key_differences": ["Insufficient structured compare data from LLM response."],
+                    "key_differentiators_overall": ["LLM output format did not match required JSON schema."],
+                    "manufacturing_impact_comparison": ["Unable to evaluate due to invalid response shape."],
+                    "complexity_risk_comparison": ["Unable to evaluate due to invalid response shape."],
+                    "recommendation": ["Re-run compare with valid Straive response formatting."],
+                }
             )
+            return fallback, "fallback", "invalid_straive_compare_response", _compare_structured_to_markdown(fallback)
         except error.HTTPError as exc:
-            return (
-                f"Comparison report unavailable: Straive HTTP {exc.code}.",
-                "fallback",
-                f"straive_compare_http_error_{exc.code}",
+            reason = f"Straive HTTP {exc.code}."
+            fallback = _normalize_compare_structured(
+                {
+                    "similarity_score_pct": 0,
+                    "similarity_reason": f"Comparison report unavailable: {reason}",
+                    "dimension_key_differences": [reason],
+                    "key_differentiators_overall": [reason],
+                    "manufacturing_impact_comparison": [reason],
+                    "complexity_risk_comparison": [reason],
+                    "recommendation": ["Check API key/access and retry compare."],
+                }
             )
+            return fallback, "fallback", f"straive_compare_http_error_{exc.code}", _compare_structured_to_markdown(fallback)
         except TimeoutError:
-            return (
-                "Comparison report unavailable: Straive request timed out.",
-                "fallback",
-                "straive_compare_timeout",
+            fallback = _normalize_compare_structured(
+                {
+                    "similarity_score_pct": 0,
+                    "similarity_reason": "Comparison report unavailable: Straive request timed out.",
+                    "dimension_key_differences": ["Request timed out while generating compare report."],
+                    "key_differentiators_overall": ["Request timed out while generating compare report."],
+                    "manufacturing_impact_comparison": ["Request timed out while generating compare report."],
+                    "complexity_risk_comparison": ["Request timed out while generating compare report."],
+                    "recommendation": ["Increase timeout or retry compare request."],
+                }
             )
+            return fallback, "fallback", "straive_compare_timeout", _compare_structured_to_markdown(fallback)
         except (error.URLError, ValueError, json.JSONDecodeError):
-            return (
-                "Comparison report unavailable: Straive request failed.",
-                "fallback",
-                "straive_compare_request_failed",
+            fallback = _normalize_compare_structured(
+                {
+                    "similarity_score_pct": 0,
+                    "similarity_reason": "Comparison report unavailable: Straive request failed.",
+                    "dimension_key_differences": ["Network or parsing failure during compare report generation."],
+                    "key_differentiators_overall": ["Network or parsing failure during compare report generation."],
+                    "manufacturing_impact_comparison": ["Network or parsing failure during compare report generation."],
+                    "complexity_risk_comparison": ["Network or parsing failure during compare report generation."],
+                    "recommendation": ["Retry compare after confirming connectivity and API settings."],
+                }
             )
+            return fallback, "fallback", "straive_compare_request_failed", _compare_structured_to_markdown(fallback)
 
-    summary_words_a = len([w for w in re.split(r"\W+", summary_a) if w])
-    summary_words_b = len([w for w in re.split(r"\W+", summary_b) if w])
-    summary_delta = summary_words_a - summary_words_b
+    words_a = {w.lower() for w in re.split(r"\W+", summary_a) if len(w) > 2}
+    words_b = {w.lower() for w in re.split(r"\W+", summary_b) if len(w) > 2}
+    union = words_a | words_b
+    overlap = words_a & words_b
+    similarity = int(round((len(overlap) / len(union)) * 100)) if union else 0
 
-    report = (
-        "Key Differentiators\n"
-        "- Comparison generated from existing analysis text only.\n"
-        f"- Analysis depth delta in words (A-B): {summary_delta}\n\n"
-        "Recommendation\n"
-        "- Prioritize manual review of the asset with higher inferred complexity and manufacturing risk in the analysis."
+    structured = _normalize_compare_structured(
+        {
+            "similarity_score_pct": similarity,
+            "similarity_reason": "Fallback similarity computed from overlap of generated analysis terminology.",
+            "dimension_key_differences": [
+                "Dimension comparison is inferred from the generated summaries.",
+                "Exact CAD scale is not available in fallback mode.",
+                "Review wall thickness and diameter mentions for final validation.",
+                "Check feature depth references for both assets.",
+                "Validate fillet/chamfer references manually in CAD.",
+            ],
+            "key_differentiators_overall": [
+                "Comparison generated from existing analysis text only.",
+                f"Shared engineering vocabulary terms: {len(overlap)}",
+                f"Unique combined engineering terms: {len(union)}",
+                "Focus on geometry and process statements in each summary.",
+                "Use CAD visual checks to confirm inferred differences.",
+            ],
+            "manufacturing_impact_comparison": [
+                "Manufacturing impact is inferred from summary process cues only.",
+                "Validate tooling complexity differences in detailed CAD review.",
+                "Confirm tolerance-critical features in drawing annotations.",
+            ],
+            "complexity_risk_comparison": [
+                "Complexity score is estimated from summary detail and terms.",
+                "Higher mention density may indicate higher review risk.",
+                "Use assembly context to confirm risk ranking.",
+            ],
+            "recommendation": [
+                "Prioritize manual review of the asset with higher inferred complexity and manufacturing risk signals.",
+            ],
+        }
     )
-    return report, "fallback", "deterministic_compare_fallback"
+    return structured, "fallback", "deterministic_compare_fallback", _compare_structured_to_markdown(structured)
 
 
 class SummarizeRequest(BaseModel):
@@ -1373,7 +1517,7 @@ def compare_assets(payload: CompareRequest) -> dict[str, Any]:
             f"Summary detail (word count): {_count_words(summary_a)} vs {_count_words(summary_b)}",
         ],
     }
-    compare_report, compare_source, compare_reason = _generate_compare_report(
+    compare_structured, compare_source, compare_reason, compare_report = _generate_compare_report(
         {
             "a": compare["a"],
             "b": compare["b"],
@@ -1381,6 +1525,7 @@ def compare_assets(payload: CompareRequest) -> dict[str, Any]:
             "summary_b": summary_b,
         }
     )
+    compare["compare_structured"] = compare_structured
     compare["compare_report"] = compare_report
     compare["compare_source"] = compare_source
     compare["compare_reason"] = compare_reason

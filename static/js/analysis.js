@@ -1111,14 +1111,16 @@ async function boot() {
   }
 }
 
-captureBtn.addEventListener("click", async () => {
-  try {
-    const result = await captureViews();
-    summaryBox.textContent = `Captured ${result.saved} views. Ready for summary.`;
-  } catch (err) {
-    summaryBox.textContent = `Capture failed: ${err.message}`;
-  }
-});
+if (captureBtn) {
+  captureBtn.addEventListener("click", async () => {
+    try {
+      const result = await captureViews();
+      summaryBox.textContent = `Captured ${result.saved} views. Ready for summary.`;
+    } catch (err) {
+      summaryBox.textContent = `Capture failed: ${err.message}`;
+    }
+  });
+}
 
 summarizeBtn.addEventListener("click", () => runSummaryPipeline({ captureFirst: true }));
 downloadAnalysisBtn.addEventListener("click", downloadAnalysis);

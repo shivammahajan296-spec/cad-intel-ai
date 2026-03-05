@@ -545,6 +545,71 @@ button:hover,
   color: #4f4f57;
 }
 
+.compare-main-card {
+  border-radius: 12px;
+  border-color: #e7e8ed;
+  box-shadow: 0 8px 20px rgba(27, 29, 36, 0.05);
+  padding: 12px 14px;
+}
+
+.compare-main-card strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #2b2d34;
+}
+
+.compare-main-card ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.compare-main-card li {
+  margin: 5px 0;
+  line-height: 1.55;
+}
+
+.compare-similarity-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.similarity-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 68px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: 0.9rem;
+  border: 1px solid transparent;
+}
+
+.similarity-high {
+  background: #e9f9ef;
+  color: #11723e;
+  border-color: #bfe9cf;
+}
+
+.similarity-mid {
+  background: #fff6e9;
+  color: #995f00;
+  border-color: #f4d6a4;
+}
+
+.similarity-low {
+  background: #ffefed;
+  color: #9d2f21;
+  border-color: #f1c1ba;
+}
+
+.compare-similarity-reason {
+  margin-top: 8px;
+  line-height: 1.58;
+}
+
 .compare-report {
   white-space: normal;
   line-height: 1.6;

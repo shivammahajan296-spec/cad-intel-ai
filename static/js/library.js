@@ -164,6 +164,13 @@ async function runSearch() {
 }
 
 function renderCompare(data) {
+  const s = data.compare_structured || {};
+  const similarityScore = Number(s.similarity_score_pct || 0);
+  const scoreTone =
+    similarityScore >= 80 ? "high" : similarityScore >= 60 ? "mid" : "low";
+  const renderBullets = (items) =>
+    `<ul>${(items || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+
   compareResults.innerHTML = `
     <div class="compare-grid">
       <div class="result-card">
@@ -191,8 +198,35 @@ function renderCompare(data) {
       <strong>Highlights</strong>
       <p>${(data.highlights || []).join("<br/>")}</p>
     </div>
-    <div class="result-card">
-      <strong>LLM Key Differentiators Report</strong>
+    <div class="result-card compare-main-card">
+      <div class="compare-similarity-head">
+        <strong>Similarity</strong>
+        <span class="similarity-badge similarity-${scoreTone}">${Number.isFinite(similarityScore) ? similarityScore : 0}%</span>
+      </div>
+      <p class="compare-similarity-reason">${escapeHtml(s.similarity_reason || "No similarity reason available.")}</p>
+    </div>
+    <div class="result-card compare-main-card">
+      <strong>Dimension-wise Key Differences</strong>
+      ${renderBullets(s.dimension_key_differences)}
+    </div>
+    <div class="result-card compare-main-card">
+      <strong>Key Differentiators Overall</strong>
+      ${renderBullets(s.key_differentiators_overall)}
+    </div>
+    <div class="result-card compare-main-card">
+      <strong>Manufacturing Impact Comparison</strong>
+      ${renderBullets(s.manufacturing_impact_comparison)}
+    </div>
+    <div class="result-card compare-main-card">
+      <strong>Complexity/Risk Comparison</strong>
+      ${renderBullets(s.complexity_risk_comparison)}
+    </div>
+    <div class="result-card compare-main-card">
+      <strong>Recommendation</strong>
+      ${renderBullets(s.recommendation)}
+    </div>
+    <div class="result-card compare-main-card">
+      <strong>Raw Compare Report</strong>
       <p class="subtle">Source: ${escapeHtml(data.compare_source || "fallback")}</p>
       <div class="compare-report">${renderReportHtml(data.compare_report || "No compare report generated.")}</div>
     </div>
