@@ -58,6 +58,7 @@ function normalizeEngineConfigClient(engine) {
       "Your task is NOT to recreate the image, but to deeply understand and describe it from a professional product engineering perspective.",
     ],
     sections: [
+      { title: "Dimension Inference", items: ["If scale is not provided, infer realistic industrial dimensions in millimeters."] },
       { title: "Object Identification", items: ["What is the likely object type?"] },
     ],
     closing: ["Be precise.", "Use millimeters."],
@@ -181,21 +182,34 @@ function closeExtractionEngineModal() {
   extractionEngineModal?.classList.add("hidden");
 }
 
-async function loadExtractionEngineConfig() {
-  if (!engineConfigStatus) return;
-  engineConfigStatus.textContent = "Loading extraction engine...";
-  const res = await fetch("/api/config/extraction-engine");
-  if (!res.ok) {
-    engineConfigStatus.textContent = "Failed to load extraction engine config.";
-    return;
-  }
-  const data = await res.json();
-  extractionEngineConfig = normalizeEngineConfigClient(data.engine);
+function populateExtractionEngineEditor() {
+  if (!extractionEngineConfig) return;
   if (engineRoleInput) engineRoleInput.value = extractionEngineConfig.role;
   if (engineObjectiveInput) engineObjectiveInput.value = extractionEngineConfig.objective.join("\n");
   if (engineClosingInput) engineClosingInput.value = extractionEngineConfig.closing.join("\n");
   renderEngineSections();
-  engineConfigStatus.textContent = "Edit sections and save. This will become the final prompt.";
+}
+
+async function loadExtractionEngineConfig() {
+  if (!engineConfigStatus) return;
+  engineConfigStatus.textContent = "Loading extraction engine...";
+  try {
+    const res = await fetch("/api/config/extraction-engine");
+    if (!res.ok) {
+      extractionEngineConfig = normalizeEngineConfigClient(null);
+      populateExtractionEngineEditor();
+      engineConfigStatus.textContent = "Using local defaults. You can still add sections and points.";
+      return;
+    }
+    const data = await res.json();
+    extractionEngineConfig = normalizeEngineConfigClient(data.engine);
+    populateExtractionEngineEditor();
+    engineConfigStatus.textContent = "Edit sections and save. This will become the final prompt.";
+  } catch (_err) {
+    extractionEngineConfig = normalizeEngineConfigClient(null);
+    populateExtractionEngineEditor();
+    engineConfigStatus.textContent = "Using local defaults. You can still add sections and points.";
+  }
 }
 
 async function saveExtractionEngineConfig() {
@@ -320,9 +334,9 @@ function renderDynamicSummary(summaryText) {
   };
 
   const pillars = [
-    { order: 1, title: "Object Identification", keys: ["object identification"] },
-    { order: 2, title: "Geometric Analysis", keys: ["geometric analysis"] },
-    { order: 3, title: "Dimension Inference", keys: ["dimension inference"] },
+    { order: 1, title: "Dimension Inference", keys: ["dimension inference"] },
+    { order: 2, title: "Object Identification", keys: ["object identification"] },
+    { order: 3, title: "Geometric Analysis", keys: ["geometric analysis"] },
     { order: 4, title: "Manufacturing Analysis", keys: ["manufacturing analysis"] },
     { order: 5, title: "DFM Review", keys: ["dfm review", "design for manufacturing"] },
     { order: 6, title: "Material Recommendation", keys: ["material recommendation"] },
@@ -388,12 +402,13 @@ function renderDynamicSummary(summaryText) {
 
   const cards = sections
     .filter((s) => s.lines.some((l) => l.trim()))
-    .map((section) => {
+    .map((section, index) => {
       const bodyHtml = renderMarkdownBlocks(section.lines);
-      const index = section.order ? `<span class="summary-index">${section.order}</span>` : "";
+      const displayOrder = section.order || index + 1;
+      const badge = `<span class="summary-index">${displayOrder}</span>`;
       return `
         <article class="summary-card">
-          <h4>${index}<strong>${escapeHtml(section.title)}</strong></h4>
+          <h4>${badge}<strong>${escapeHtml(section.title)}</strong></h4>
           <div class="summary-body">${bodyHtml}</div>
         </article>
       `;

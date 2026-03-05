@@ -173,6 +173,14 @@ def _default_extraction_engine() -> dict[str, Any]:
         ],
         "sections": [
             {
+                "title": "Dimension Inference",
+                "items": [
+                    "If scale is not provided, infer realistic industrial dimensions in millimeters.",
+                    "Estimate overall height, width / diameter, wall thickness, feature depth, fillet radius, chamfer size, and thread pitch (if visible).",
+                    "Explain reasoning behind each estimate.",
+                ],
+            },
+            {
                 "title": "Object Identification",
                 "items": [
                     "What is the likely object type?",
@@ -190,14 +198,6 @@ def _default_extraction_engine() -> dict[str, Any]:
                     "Detect wall thickness logic.",
                     "Detect undercuts.",
                     "Detect assembly parts or multi-body structure.",
-                ],
-            },
-            {
-                "title": "Dimension Inference",
-                "items": [
-                    "If scale is not provided, infer realistic industrial dimensions in millimeters.",
-                    "Estimate overall height, width / diameter, wall thickness, feature depth, fillet radius, chamfer size, and thread pitch (if visible).",
-                    "Explain reasoning behind each estimate.",
                 ],
             },
             {

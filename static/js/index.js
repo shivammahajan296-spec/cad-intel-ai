@@ -10,6 +10,20 @@ const openStraiveModalBtn = document.getElementById("openStraiveModalBtn");
 
 let pendingFile = null;
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function setLoadingStatus(message) {
+  statusEl.classList.add("loading-status");
+  statusEl.innerHTML = `${message} <span class="loading-dots" aria-hidden="true"></span>`;
+}
+
+function clearLoadingStatus(message) {
+  statusEl.classList.remove("loading-status");
+  statusEl.textContent = message;
+}
+
 function openStraiveModal() {
   straiveModal.classList.remove("hidden");
 }
@@ -87,21 +101,31 @@ uploadBtn.addEventListener("click", async () => {
     return;
   }
 
-  statusEl.textContent = "Uploading...";
+  setLoadingStatus("Uploading");
+  uploadBtn.disabled = true;
   const formData = new FormData();
   formData.append("file", file);
 
-  const res = await fetch("/api/upload", { method: "POST", body: formData });
-  if (!res.ok) {
-    statusEl.textContent = "Upload failed.";
-    return;
-  }
+  try {
+    const res = await fetch("/api/upload", { method: "POST", body: formData });
+    if (!res.ok) {
+      clearLoadingStatus("Upload failed.");
+      return;
+    }
 
-  const data = await res.json();
-  if (data.cached) {
-    statusEl.textContent = "Using cached analysis for this filename...";
+    const data = await res.json();
+    if (data.cached) {
+      setLoadingStatus("Using cached analysis");
+    } else {
+      setLoadingStatus("Preparing analysis workspace");
+    }
+    await wait(4500);
+    window.location.href = data.analysis_url;
+  } catch (_err) {
+    clearLoadingStatus("Upload failed.");
+  } finally {
+    uploadBtn.disabled = false;
   }
-  window.location.href = data.analysis_url;
 });
 
 saveStraiveModalBtn.addEventListener("click", saveStraiveFromModal);
