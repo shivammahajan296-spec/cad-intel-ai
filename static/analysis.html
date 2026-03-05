@@ -81,21 +81,12 @@
   <div id="extractionEngineModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="extractionEngineTitle">
     <div class="modal-card extraction-modal-card">
       <h3 id="extractionEngineTitle">Edit Extraction Engine</h3>
-      <p class="subtle">Define role, objectives, and dynamic sections. This builds the final prompt used for summary generation.</p>
-      <label class="engine-label" for="engineRoleInput">Role</label>
-      <input id="engineRoleInput" class="text-input" type="text" placeholder="You are a senior..." />
-
-      <label class="engine-label" for="engineObjectiveInput">Objectives (one line each)</label>
-      <textarea id="engineObjectiveInput" class="engine-textarea" rows="3" placeholder="Analyze the CAD image...&#10;Your task is NOT to recreate..."></textarea>
 
       <div class="engine-head-row">
         <h4>Sections</h4>
         <button id="addEngineSectionBtn" class="mini-btn" type="button">Add Section</button>
       </div>
       <div id="engineSections" class="engine-sections"></div>
-
-      <label class="engine-label" for="engineClosingInput">Final Instructions (one line each)</label>
-      <textarea id="engineClosingInput" class="engine-textarea" rows="4" placeholder="Be precise.&#10;Use millimeters."></textarea>
 
       <div class="actions-row">
         <button id="saveEngineConfigBtn" type="button">Save Extraction Engine</button>

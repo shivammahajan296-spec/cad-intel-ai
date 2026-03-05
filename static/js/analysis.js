@@ -208,9 +208,15 @@ function renderEngineSections() {
 
 function syncEngineTopFields() {
   if (!extractionEngineConfig) return;
-  extractionEngineConfig.role = String(engineRoleInput?.value || "").trim();
-  extractionEngineConfig.objective = splitNonEmptyLines(engineObjectiveInput?.value || "");
-  extractionEngineConfig.closing = splitNonEmptyLines(engineClosingInput?.value || "");
+  if (engineRoleInput) {
+    extractionEngineConfig.role = String(engineRoleInput.value || "").trim();
+  }
+  if (engineObjectiveInput) {
+    extractionEngineConfig.objective = splitNonEmptyLines(engineObjectiveInput.value || "");
+  }
+  if (engineClosingInput) {
+    extractionEngineConfig.closing = splitNonEmptyLines(engineClosingInput.value || "");
+  }
 }
 
 function openExtractionEngineModal() {

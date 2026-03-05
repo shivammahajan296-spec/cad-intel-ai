@@ -125,7 +125,7 @@ uploadBtn.addEventListener("click", async () => {
     const data = await res.json();
     if (data.cached) {
       showLoaderBarOnly();
-      await wait(10000);
+      await wait(5000);
     } else {
       setLoadingStatus("Preparing analysis workspace");
       await wait(4500);
