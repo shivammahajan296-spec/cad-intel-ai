@@ -19,6 +19,15 @@ function setLoadingStatus(message) {
   statusEl.innerHTML = `${message} <span class="loading-dots" aria-hidden="true"></span>`;
 }
 
+function showLoaderBarOnly() {
+  statusEl.classList.remove("loading-status");
+  statusEl.innerHTML = `
+    <span class="upload-loader" aria-hidden="true">
+      <span class="upload-loader-fill"></span>
+    </span>
+  `;
+}
+
 function clearLoadingStatus(message) {
   statusEl.classList.remove("loading-status");
   statusEl.textContent = message;
@@ -115,11 +124,12 @@ uploadBtn.addEventListener("click", async () => {
 
     const data = await res.json();
     if (data.cached) {
-      setLoadingStatus("Using cached analysis");
+      showLoaderBarOnly();
+      await wait(10000);
     } else {
       setLoadingStatus("Preparing analysis workspace");
+      await wait(4500);
     }
-    await wait(4500);
     window.location.href = data.analysis_url;
   } catch (_err) {
     clearLoadingStatus("Upload failed.");

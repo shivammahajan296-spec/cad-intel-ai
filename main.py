@@ -212,7 +212,7 @@ def _default_extraction_engine() -> dict[str, Any]:
                 ],
             },
             {
-                "title": "Design For Manufacturing (DFM) Review",
+                "title": "DFM Review",
                 "items": [
                     "Strength weaknesses.",
                     "Stress concentration areas.",
@@ -250,6 +250,26 @@ def _default_extraction_engine() -> dict[str, Any]:
     }
 
 
+def _canonical_section_title(title: str) -> str:
+    t = str(title or "").strip()
+    n = re.sub(r"\s+", " ", t.lower())
+    if "dimension inference" in n:
+        return "Dimension Inference"
+    if "object identification" in n:
+        return "Object Identification"
+    if "geometric analysis" in n:
+        return "Geometric Analysis"
+    if "manufacturing analysis" in n:
+        return "Manufacturing Analysis"
+    if "dfm review" in n or "design for manufacturing" in n:
+        return "DFM Review"
+    if "material recommendation" in n:
+        return "Material Recommendation"
+    if "improvement suggestions" in n:
+        return "Improvement Suggestions"
+    return t
+
+
 def _normalize_extraction_engine(engine_cfg: Any) -> dict[str, Any]:
     default_engine = _default_extraction_engine()
     if not isinstance(engine_cfg, dict):
@@ -276,9 +296,23 @@ def _normalize_extraction_engine(engine_cfg: Any) -> dict[str, Any]:
             if isinstance(raw_items, list):
                 items = [str(item).strip() for item in raw_items if str(item).strip()]
             if title and items:
-                sections.append({"title": title, "items": items})
+                sections.append({"title": _canonical_section_title(title), "items": items})
     if not sections:
         sections = default_engine["sections"]
+    else:
+        desired = [
+            "Dimension Inference",
+            "Object Identification",
+            "Geometric Analysis",
+            "Manufacturing Analysis",
+            "DFM Review",
+            "Material Recommendation",
+            "Improvement Suggestions",
+        ]
+        rank = {name: idx for idx, name in enumerate(desired)}
+        indexed = list(enumerate(sections))
+        indexed.sort(key=lambda pair: (rank.get(pair[1]["title"], 100 + pair[0]), pair[0]))
+        sections = [section for _idx, section in indexed]
 
     raw_closing = engine_cfg.get("closing")
     closing = []

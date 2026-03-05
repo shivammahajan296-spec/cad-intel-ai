@@ -50,6 +50,40 @@ let dxfDragging = false;
 let dxfLastX = 0;
 let dxfLastY = 0;
 
+function canonicalizeSectionTitle(title) {
+  const t = String(title || "").trim();
+  const n = t.toLowerCase().replace(/\s+/g, " ");
+  if (n.includes("dimension inference")) return "Dimension Inference";
+  if (n.includes("object identification")) return "Object Identification";
+  if (n.includes("geometric analysis")) return "Geometric Analysis";
+  if (n.includes("manufacturing analysis")) return "Manufacturing Analysis";
+  if (n.includes("dfm review") || n.includes("design for manufacturing")) return "DFM Review";
+  if (n.includes("material recommendation")) return "Material Recommendation";
+  if (n.includes("improvement suggestions")) return "Improvement Suggestions";
+  return t;
+}
+
+function sortSectionsByCanonicalOrder(sections) {
+  const desired = [
+    "Dimension Inference",
+    "Object Identification",
+    "Geometric Analysis",
+    "Manufacturing Analysis",
+    "DFM Review",
+    "Material Recommendation",
+    "Improvement Suggestions",
+  ];
+  const rank = new Map(desired.map((name, idx) => [name, idx]));
+  return (sections || [])
+    .map((section, idx) => ({ section, idx }))
+    .sort((a, b) => {
+      const ar = rank.has(a.section.title) ? rank.get(a.section.title) : 100 + a.idx;
+      const br = rank.has(b.section.title) ? rank.get(b.section.title) : 100 + b.idx;
+      return ar - br;
+    })
+    .map((entry) => entry.section);
+}
+
 function normalizeEngineConfigClient(engine) {
   const fallback = {
     role: "You are a senior mechanical design engineer, CAD expert, and manufacturing specialist.",
@@ -60,6 +94,11 @@ function normalizeEngineConfigClient(engine) {
     sections: [
       { title: "Dimension Inference", items: ["If scale is not provided, infer realistic industrial dimensions in millimeters."] },
       { title: "Object Identification", items: ["What is the likely object type?"] },
+      { title: "Geometric Analysis", items: ["Identify symmetry and primary geometric primitives."] },
+      { title: "Manufacturing Analysis", items: ["Infer likely manufacturing process and tooling complexity."] },
+      { title: "DFM Review", items: ["Highlight DFM risks and stress concentration concerns."] },
+      { title: "Material Recommendation", items: ["Suggest suitable materials and alternatives."] },
+      { title: "Improvement Suggestions", items: ["Suggest structural and manufacturing improvements."] },
     ],
     closing: ["Be precise.", "Use millimeters."],
   };
@@ -72,7 +111,7 @@ function normalizeEngineConfigClient(engine) {
   const sections = Array.isArray(engine.sections)
     ? engine.sections
         .map((section) => ({
-          title: String(section?.title || "").trim(),
+          title: canonicalizeSectionTitle(section?.title),
           items: Array.isArray(section?.items)
             ? section.items.map((v) => String(v || "").trim()).filter(Boolean)
             : [],
@@ -86,7 +125,7 @@ function normalizeEngineConfigClient(engine) {
   return {
     role,
     objective: objective.length ? objective : fallback.objective,
-    sections: sections.length ? sections : fallback.sections,
+    sections: sortSectionsByCanonicalOrder(sections.length ? sections : fallback.sections),
     closing: closing.length ? closing : fallback.closing,
   };
 }
