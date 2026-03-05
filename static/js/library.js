@@ -77,11 +77,29 @@ function showSearch(items) {
   }
   searchResults.innerHTML = items
     .map((item) => {
-      const label = item.metadata?.filename || item.asset_id;
-      const score = item.distance != null ? `score ${Number(item.distance).toFixed(3)}` : "score n/a";
-      const snippet = (item.document || "Matched based on indexed content.").slice(0, 180);
+      const label = item.filename || item.metadata?.filename || item.asset_id;
+      const score =
+        item.match_score != null
+          ? `${Math.max(0, Math.min(100, Number(item.match_score) || 0))}%`
+          : (item.distance != null ? `${Math.max(0, Math.min(100, Math.round((1 - Number(item.distance)) * 100)))}%` : "N/A");
+      const matchedLine = (item.matched_line || item.document || "No direct line match found.").slice(0, 320);
       const href = label ? `/analysis.html?filename=${encodeURIComponent(label)}` : `/analysis.html?asset_id=${item.asset_id}`;
-      return `<div class="result-card"><strong>${label}</strong><p>${snippet}</p><a href="${href}">Open analysis</a> <span class="subtle">(${score})</span></div>`;
+      const thumb = item.thumbnail
+        ? `<img class="search-thumb" src="${item.thumbnail}" alt="${escapeHtml(label)} thumbnail" />`
+        : `<div class="search-thumb search-thumb-empty">No preview</div>`;
+      return `
+        <div class="result-card search-hit-card">
+          ${thumb}
+          <div class="search-hit-content">
+            <div class="search-hit-top">
+              <strong>${escapeHtml(label)}</strong>
+              <span class="search-score">Match Score: ${escapeHtml(score)}</span>
+            </div>
+            <p class="search-hit-line">${escapeHtml(matchedLine)}</p>
+            <a href="${href}">Open analysis</a>
+          </div>
+        </div>
+      `;
     })
     .join("");
 }

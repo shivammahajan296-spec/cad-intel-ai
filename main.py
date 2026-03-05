@@ -1027,6 +1027,39 @@ Rules:
     return structured, "fallback", "deterministic_compare_fallback", _compare_structured_to_markdown(structured)
 
 
+def _asset_thumbnail(asset: dict[str, Any]) -> str:
+    shots = asset.get("screenshots", []) or []
+    if not isinstance(shots, list):
+        return ""
+    return str(shots[2] if len(shots) > 2 else (shots[0] if shots else ""))
+
+
+def _find_match_line(asset: dict[str, Any], query: str) -> str:
+    q = str(query or "").strip().lower()
+    terms = [t for t in re.split(r"\W+", q) if t]
+    candidate_lines: list[str] = []
+    candidate_lines.append(str(asset.get("filename", "")).strip())
+
+    summary = str(asset.get("summary", "") or "")
+    candidate_lines.extend([line.strip() for line in summary.splitlines() if line.strip()])
+    candidate_lines.extend([str(t).strip() for t in (asset.get("texts", []) or []) if str(t).strip()])
+    candidate_lines.extend([str(h).strip() for h in (asset.get("hierarchy", []) or []) if str(h).strip()])
+
+    if not candidate_lines:
+        return ""
+
+    if q:
+        for line in candidate_lines:
+            if q in line.lower():
+                return line[:300]
+
+    for term in terms:
+        for line in candidate_lines:
+            if term in line.lower():
+                return line[:300]
+    return candidate_lines[0][:300]
+
+
 class SummarizeRequest(BaseModel):
     asset_id: str
     source_type: str
@@ -1420,6 +1453,8 @@ def semantic_search(payload: SearchRequest) -> dict[str, Any]:
     if not query:
         return {"items": []}
 
+    assets_map = _load_assets()
+
     if chromadb:
         try:
             client = chromadb.PersistentClient(path=str(DB_DIR))
@@ -1428,14 +1463,28 @@ def semantic_search(payload: SearchRequest) -> dict[str, Any]:
 
             items = []
             for idx, asset_id in enumerate(results.get("ids", [[]])[0]):
+                distance_val = (
+                    results.get("distances", [[]])[0][idx]
+                    if results.get("distances")
+                    else None
+                )
+                asset = assets_map.get(asset_id, {})
+                match_score = None
+                if distance_val is not None:
+                    try:
+                        match_score = int(round(max(0.0, min(1.0, 1.0 - float(distance_val))) * 100))
+                    except Exception:
+                        match_score = None
                 items.append(
                     {
                         "asset_id": asset_id,
                         "document": results.get("documents", [[]])[0][idx],
                         "metadata": results.get("metadatas", [[]])[0][idx],
-                        "distance": results.get("distances", [[]])[0][idx]
-                        if results.get("distances")
-                        else None,
+                        "distance": distance_val,
+                        "match_score": match_score,
+                        "filename": asset.get("filename") or (results.get("metadatas", [[]])[0][idx] or {}).get("filename"),
+                        "thumbnail": _asset_thumbnail(asset),
+                        "matched_line": _find_match_line(asset, query),
                     }
                 )
             if items:
@@ -1445,9 +1494,8 @@ def semantic_search(payload: SearchRequest) -> dict[str, Any]:
 
     # Lexical fallback so search still works without vector DB.
     terms = [t for t in re.split(r"\W+", query.lower()) if t]
-    assets = _load_assets()
     scored: list[dict[str, Any]] = []
-    for asset in assets.values():
+    for asset in assets_map.values():
         blob = " ".join(
             [
                 asset.get("filename", ""),
@@ -1466,6 +1514,10 @@ def semantic_search(payload: SearchRequest) -> dict[str, Any]:
                     "document": (asset.get("summary") or "Match found in metadata/text.")[:350],
                     "metadata": {"filename": asset.get("filename")},
                     "distance": round(1 / (score + 1), 4),
+                    "match_score": min(100, score * 20),
+                    "filename": asset.get("filename"),
+                    "thumbnail": _asset_thumbnail(asset),
+                    "matched_line": _find_match_line(asset, query),
                 }
             )
 
