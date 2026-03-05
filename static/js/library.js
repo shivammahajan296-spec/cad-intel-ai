@@ -188,8 +188,30 @@ function renderCompare(data) {
     similarityScore >= 80 ? "high" : similarityScore >= 60 ? "mid" : "low";
   const renderBullets = (items) =>
     `<ul>${(items || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+  const assetA = assets.find((item) => item.asset_id === data?.a?.asset_id) || {};
+  const assetB = assets.find((item) => item.asset_id === data?.b?.asset_id) || {};
+  const thumbA = assetA.screenshots?.[2] || assetA.screenshots?.[0] || "";
+  const thumbB = assetB.screenshots?.[2] || assetB.screenshots?.[0] || "";
+  const imgA = thumbA
+    ? `<img class="compare-asset-thumb" src="${thumbA}" alt="Asset A preview" />`
+    : `<div class="compare-asset-thumb compare-asset-thumb-empty">No preview</div>`;
+  const imgB = thumbB
+    ? `<img class="compare-asset-thumb" src="${thumbB}" alt="Asset B preview" />`
+    : `<div class="compare-asset-thumb compare-asset-thumb-empty">No preview</div>`;
 
   compareResults.innerHTML = `
+    <div class="compare-assets-row">
+      <div class="compare-asset-mini">
+        <span class="compare-asset-label">Asset A</span>
+        ${imgA}
+        <p class="subtle">${escapeHtml(data?.a?.filename || "Asset A")}</p>
+      </div>
+      <div class="compare-asset-mini">
+        <span class="compare-asset-label">Asset B</span>
+        ${imgB}
+        <p class="subtle">${escapeHtml(data?.b?.filename || "Asset B")}</p>
+      </div>
+    </div>
     <div class="result-card compare-main-card">
       <div class="compare-similarity-head">
         <div class="similarity-title-wrap">
