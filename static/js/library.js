@@ -172,36 +172,16 @@ function renderCompare(data) {
     `<ul>${(items || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
 
   compareResults.innerHTML = `
-    <div class="compare-grid">
-      <div class="result-card">
-        <h5>${data.a.filename}</h5>
-        <p>Type: ${String(data.a.source_type).toUpperCase()}</p>
-        <p>Author: ${data.a.author}</p>
-        <p>Version: ${data.a.version}</p>
-        <p>Texts: ${data.a.texts_count}</p>
-        <p>Hierarchy: ${data.a.hierarchy_count}</p>
-        <p>Screenshots: ${data.a.screenshots_count}</p>
-        <p>Summary words: ${data.a.summary_words}</p>
-      </div>
-      <div class="result-card">
-        <h5>${data.b.filename}</h5>
-        <p>Type: ${String(data.b.source_type).toUpperCase()}</p>
-        <p>Author: ${data.b.author}</p>
-        <p>Version: ${data.b.version}</p>
-        <p>Texts: ${data.b.texts_count}</p>
-        <p>Hierarchy: ${data.b.hierarchy_count}</p>
-        <p>Screenshots: ${data.b.screenshots_count}</p>
-        <p>Summary words: ${data.b.summary_words}</p>
-      </div>
-    </div>
-    <div class="result-card">
-      <strong>Highlights</strong>
-      <p>${(data.highlights || []).join("<br/>")}</p>
-    </div>
     <div class="result-card compare-main-card">
       <div class="compare-similarity-head">
-        <strong>Similarity</strong>
+        <div class="similarity-title-wrap">
+          <strong>Similarity</strong>
+          <span class="subtle">AI-based overlap from generated analysis</span>
+        </div>
         <span class="similarity-badge similarity-${scoreTone}">${Number.isFinite(similarityScore) ? similarityScore : 0}%</span>
+      </div>
+      <div class="similarity-meter">
+        <span class="similarity-meter-fill similarity-${scoreTone}" style="width:${Math.max(0, Math.min(100, Number.isFinite(similarityScore) ? similarityScore : 0))}%"></span>
       </div>
       <p class="compare-similarity-reason">${escapeHtml(s.similarity_reason || "No similarity reason available.")}</p>
     </div>
@@ -224,11 +204,6 @@ function renderCompare(data) {
     <div class="result-card compare-main-card">
       <strong>Recommendation</strong>
       ${renderBullets(s.recommendation)}
-    </div>
-    <div class="result-card compare-main-card">
-      <strong>Raw Compare Report</strong>
-      <p class="subtle">Source: ${escapeHtml(data.compare_source || "fallback")}</p>
-      <div class="compare-report">${renderReportHtml(data.compare_report || "No compare report generated.")}</div>
     </div>
   `;
 }
